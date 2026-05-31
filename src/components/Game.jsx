@@ -20,6 +20,7 @@ export function Game({ session, user, onLeave }) {
   const { state, status, error } = room;
   const [tab, setTab] = useState("questions");
   const [toast, setToast] = useState(null);
+  const [exitModal, setExitModal] = useState(null); // "leave" | "signout" | null
   const toastTimer = useRef(null);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
   const mine = session.side;
@@ -87,6 +88,7 @@ export function Game({ session, user, onLeave }) {
               <IconChip key={id} active={state.feel === id} onClick={() => activateMode(id)} color={meColor} icon={ic} />
             ))}
           </div>
+          <ExitMenu onLeave={() => setExitModal("leave")} onSignOut={() => setExitModal("signout")} />
         </div>
       </header>
 
@@ -95,15 +97,35 @@ export function Game({ session, user, onLeave }) {
         <Tab active={tab === "drawing"} onClick={() => setTab("drawing")} icon="brush" label="Drawing" />
         <Tab active={tab === "creative"} onClick={() => setTab("creative")} icon="pen" label="Creative" />
         <Tab active={tab === "gallery"} onClick={() => setTab("gallery")} icon="frame" label="Gallery" />
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          <button className="press" onClick={onLeave} style={{ border: "none", background: "transparent", color: C.inkSoft, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-            <Icon name="close" size={14} color={C.inkSoft} /> leave
-          </button>
-          <button className="press" onClick={signOut} style={{ border: `1.5px solid ${C.line}`, background: "rgba(255,255,255,.7)", color: C.inkSoft, fontSize: 12.5, borderRadius: 10, padding: "5px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-            <Icon name="arrow" size={13} color={C.inkSoft} style={{ transform: "rotate(180deg)" }} /> sign out
-          </button>
-        </div>
       </nav>
+
+      {/* Exit confirmation modal */}
+      {exitModal && (
+        <div onClick={() => setExitModal(null)} style={{ position: "fixed", inset: 0, zIndex: 30, background: "rgba(60,50,40,.5)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div className="pop" onClick={(e) => e.stopPropagation()} style={{ background: C.cream, borderRadius: 24, padding: "28px 26px", maxWidth: 360, width: "100%", textAlign: "center", boxShadow: "0 32px 60px -20px rgba(0,0,0,.35)" }}>
+            <div style={{ display: "inline-flex", marginBottom: 10 }}>
+              <Icon name={exitModal === "leave" ? "close" : "arrow"} size={32} color={C.roseDeep} style={exitModal === "signout" ? { transform: "rotate(180deg)" } : {}} />
+            </div>
+            <h2 style={{ fontFamily: "'Fraunces',serif", margin: "0 0 8px", fontSize: 24 }}>
+              {exitModal === "leave" ? "Leave the room?" : "Sign out?"}
+            </h2>
+            <p style={{ color: C.inkSoft, fontSize: 14, margin: "0 0 22px", lineHeight: 1.5 }}>
+              {exitModal === "leave"
+                ? "You can always come back — just use the same room name and code."
+                : "You'll be signed out completely. Your room and progress are saved."}
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button className="press" onClick={() => setExitModal(null)} style={{ flex: 1, border: `1.5px solid ${C.line}`, background: "#fff", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, cursor: "pointer", color: C.ink }}>
+                Stay
+              </button>
+              <button className="press" onClick={() => { setExitModal(null); exitModal === "leave" ? onLeave() : signOut(); }}
+                style={{ flex: 1, border: "none", background: `linear-gradient(90deg, ${C.roseDeep}, ${C.blueDeep})`, borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, cursor: "pointer", color: "#fff" }}>
+                {exitModal === "leave" ? "Yes, leave" : "Yes, sign out"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main style={{ maxWidth: 820, margin: "0 auto", padding: "18px 18px 48px", width: "100%" }}>
         {tab === "questions" && <Questions room={room} mine={mine} names={state.players} />}
@@ -138,5 +160,36 @@ function IconChip({ active, onClick, color, icon }) {
     <button className="press" onClick={onClick} style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: `1.5px solid ${active ? color : C.line}`, background: active ? color : "rgba(255,255,255,.7)" }}>
       <Icon name={icon} size={19} color={active ? "#fff" : C.inkSoft} />
     </button>
+  );
+}
+function ExitMenu({ onLeave, onSignOut }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler); document.addEventListener("touchstart", handler);
+    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("touchstart", handler); };
+  }, [open]);
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button className="press" onClick={() => setOpen((v) => !v)} style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: `1.5px solid ${C.line}`, background: "rgba(255,255,255,.7)" }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 3.5, alignItems: "center", justifyContent: "center" }}>
+          {[0,1,2].map((i) => <span key={i} style={{ width: 4, height: 4, borderRadius: 999, background: C.inkSoft, display: "block" }} />)}
+        </span>
+      </button>
+      {open && (
+        <div className="pop" style={{ position: "absolute", right: 0, top: 44, background: "#fff", borderRadius: 16, boxShadow: "0 16px 40px -12px rgba(0,0,0,.25)", border: `1px solid ${C.line}`, overflow: "hidden", zIndex: 10, minWidth: 160 }}>
+          <button className="press" onClick={() => { setOpen(false); onLeave(); }}
+            style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "13px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.ink, borderBottom: `1px solid ${C.line}` }}>
+            <Icon name="close" size={16} color={C.inkSoft} /> Leave room
+          </button>
+          <button className="press" onClick={() => { setOpen(false); onSignOut(); }}
+            style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "13px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.roseDeep }}>
+            <Icon name="arrow" size={16} color={C.roseDeep} style={{ transform: "rotate(180deg)" }} /> Sign out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

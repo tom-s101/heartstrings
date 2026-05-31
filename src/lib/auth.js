@@ -28,7 +28,10 @@ export function useSession() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+      setSession(data?.session ?? null);
+      setLoading(false);
+    }).catch(() => {
+      setSession(null);
       setLoading(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));

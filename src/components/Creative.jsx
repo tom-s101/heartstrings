@@ -276,7 +276,13 @@ const TONES = ["sweet", "nostalgic", "spicy", "future-self"];
 function Letter({ c, setC, ai }) {
   const l = c.letter || { tone: "sweet", body: "", sealed: false };
   const [body, setBody] = useState(l.body || ""); const [busy, setBusy] = useState(false);
-  const draft = async () => { setBusy(true); const t = await ai(`Write a short ${l.tone} love letter (4-6 lines) from one partner to another in a long-distance relationship. Warm, specific, never crude. Return only the letter.`); setBusy(false); if (t) { setBody(t); setC((cc) => { cc.letter = { ...(cc.letter || l), body: t }; }); } };
+  const draft = async () => {
+    if (body.trim() && !window.confirm("Replace your current text with an AI draft?")) return;
+    setBusy(true);
+    const t = await ai(`Write a short ${l.tone} love letter (4-6 lines) from one partner to another in a long-distance relationship. Warm, specific, never crude. Return only the letter.`);
+    setBusy(false);
+    if (t) { setBody(t); setC((cc) => { cc.letter = { ...(cc.letter || l), body: t }; }); }
+  };
   if (l.sealed) return (
     <div style={{ textAlign: "center" }}>
       <div style={{ background: `linear-gradient(160deg, ${C.blueLight}, #fff 50%, ${C.roseLight})`, borderRadius: 16, padding: 20, border: `1px solid ${C.line}`, fontFamily: "'Fraunces',serif", fontSize: 17, lineHeight: 1.6, whiteSpace: "pre-wrap", textAlign: "left" }}>{l.body}</div>

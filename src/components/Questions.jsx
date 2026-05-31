@@ -28,7 +28,7 @@ export function Questions({ room, mine, names }) {
   const [td, setTd] = [q._td, (v) => commit((s) => { s.q._td = v; return s; })]; // synced truth/dare reveal
 
   const setStyle = (style) => commit((s) => { s.q.style = style; s.q.sel = style === "classic" ? "deep" : "wyr"; return s; });
-  const setSel = (sel) => { commit((s) => { s.q.sel = sel; return s; }); generateQuestion({ sel, vibe: q.vibe, theme: q.theme }); };
+  const setSel = (sel) => commit((s) => { s.q.sel = sel; return s; }); // no auto-generate on select
   const setVibe = (vibe) => commit((s) => { s.q.vibe = vibe; return s; });
   const setTheme = (theme) => commit((s) => { s.q.theme = theme; return s; });
   // setting my pick also scores the round if it completes the pair — done in one
@@ -36,7 +36,7 @@ export function Questions({ room, mine, names }) {
   const setPick = (k) => commit((s) => {
     s.q.picks = { ...s.q.picks, [mine]: k };
     const p = s.q.picks;
-    if (state.feel === "gamenight" && p.him && p.her && !s.q.awarded) {
+    if (s.feel === "gamenight" && p.him && p.her && !s.q.awarded) { // s.feel not state.feel
       s.q.awarded = true;
       if (p.him === p.her) { s.score.him = (s.score.him || 0) + 1; s.score.her = (s.score.her || 0) + 1; }
     }

@@ -72,7 +72,7 @@ export function useRoom(roomName, joinCode, side, user, name) {
 
       channel.on("postgres_changes",
         { event: "*", schema: "public", table: "room_state", filter: `room_id=eq.${rid}` },
-        (p) => applyRow(p.new));
+        (p) => { if (p.new.updated_by !== clientId.current) applyRow(p.new); });
 
       channel.on("broadcast", { event: "stroke" }, ({ payload }) => {
         if (payload.side !== side) setPartnerStrokes((s) => [...s, payload.stroke]);
@@ -85,10 +85,21 @@ export function useRoom(roomName, joinCode, side, user, name) {
         const st = channel.presenceState();
         const members = Object.values(st).flat();
         const bySide = Object.fromEntries(members.map((m) => [m.side, m]));
-        setState((prev) => ({ ...prev, players: {
-          him: { lastSeen: bySide.him ? Date.now() : 0, name: bySide.him?.name || prev.players?.him?.name || "" },
-          her: { lastSeen: bySide.her ? Date.now() : 0, name: bySide.her?.name || prev.players?.her?.name || "" },
-        } }));
+        setState((prev) => {
+          const himOnline = !!bySide.him;
+          const herOnline = !!bySide.her;
+          const himName = bySide.him?.name || prev.players?.him?.name || "";
+          const herName = bySide.her?.name || prev.players?.her?.name || "";
+          // Skip re-render if nothing meaningful changed
+          const prevHimOnline = (prev.players?.him?.lastSeen || 0) > 0;
+          const prevHerOnline = (prev.players?.her?.lastSeen || 0) > 0;
+          if (himOnline === prevHimOnline && herOnline === prevHerOnline &&
+              himName === prev.players?.him?.name && herName === prev.players?.her?.name) return prev;
+          return { ...prev, players: {
+            him: { lastSeen: himOnline ? Date.now() : 0, name: himName },
+            her: { lastSeen: herOnline ? Date.now() : 0, name: herName },
+          }};
+        });
       });
 
       await channel.subscribe(async (st) => {

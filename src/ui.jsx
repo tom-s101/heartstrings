@@ -81,9 +81,10 @@ export function Background({ children }) {
   return (
     <div style={{ position: "fixed", inset: 0, overflow: "auto", overflowX: "hidden", background: C.cream, fontFamily: "'Nunito', sans-serif", color: C.ink }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Caveat:wght@500;600&family=Nunito:wght@400;600;700;800&display=swap');
         html,body{overflow-x:hidden;max-width:100%}
         *{box-sizing:border-box} ::selection{background:${C.roseLight}}
+        input:focus,textarea:focus{scroll-margin-bottom:320px}
+        @media(max-width:420px){.tab-label{display:none}}
         .fin{animation:fin .7s cubic-bezier(.2,.8,.2,1) both}.d1{animation-delay:.12s}
         @keyframes fin{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
         .pop{animation:pop .42s cubic-bezier(.2,.8,.2,1) both}

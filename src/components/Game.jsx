@@ -21,6 +21,7 @@ export function Game({ session, user, onLeave }) {
   const [tab, setTab] = useState("questions");
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
   const mine = session.side;
   const meColor = mine === "him" ? C.blue : C.rose;
   const other = mine === "him" ? "her" : "him";
@@ -127,8 +128,8 @@ function Presence({ partnerOnline, status }) {
 }
 function Tab({ active, onClick, icon, label }) {
   return (
-    <button className="press" onClick={onClick} style={{ border: "none", cursor: "pointer", padding: "11px 16px", borderRadius: "16px 16px 0 0", fontWeight: 800, fontSize: 14, color: active ? C.ink : C.inkSoft, background: active ? "rgba(255,255,255,.9)" : "rgba(255,255,255,.4)", boxShadow: active ? "0 -3px 12px -7px rgba(0,0,0,.3)" : "none", display: "flex", alignItems: "center", gap: 7 }}>
-      <Icon name={icon} size={17} color={active ? C.ink : C.inkSoft} /> {label}
+    <button className="press" onClick={onClick} style={{ border: "none", cursor: "pointer", padding: "11px 13px", borderRadius: "16px 16px 0 0", fontWeight: 800, fontSize: 14, color: active ? C.ink : C.inkSoft, background: active ? "rgba(255,255,255,.9)" : "rgba(255,255,255,.4)", boxShadow: active ? "0 -3px 12px -7px rgba(0,0,0,.3)" : "none", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+      <Icon name={icon} size={17} color={active ? C.ink : C.inkSoft} /><span className="tab-label">{label}</span>
     </button>
   );
 }

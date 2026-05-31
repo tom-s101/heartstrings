@@ -6,6 +6,7 @@ export function Join({ onEnter }) {
   const [code, setCode] = useState("");
   const [side, setSide] = useState(null);
   const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
   const can = room.trim().length > 1 && code.trim().length >= 4 && side && name.trim().length > 0;
 
   return (
@@ -31,11 +32,11 @@ export function Join({ onEnter }) {
         <Label style={{ marginTop: 20 }}>pick your side</Label>
         <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
           <SideCard active={side === "him"} onClick={() => setSide("him")} icon="wave" color={C.blue} deep={C.blueDeep} light={C.blueLight} label="His side" sub="the deep blue" />
-          <SideCard active={side === "her"} onClick={() => setSide("her")} icon="lotus" color={C.rose} deep={C.roseDeep} light={C.roseLight} label="Her side" sub="the soft rose" />
+          <SideCard active={side === "her"} onClick={() => setSide("her")} icon="lotus" color={C.rose} deep={C.roseDeep} light={C.roseLight} label="Her side" sub="the soft lotus" />
         </div>
 
-        <button className="press" disabled={!can} onClick={() => onEnter({ room: room.trim().toLowerCase(), code: code.trim(), side, name: name.trim() })} style={primary(can, { marginTop: 24, width: "100%" })}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>step inside together <Icon name="arrow" size={18} color={can ? "#fff" : C.inkSoft} /></span>
+        <button className="press" disabled={!can || busy} onClick={() => { setBusy(true); onEnter({ room: room.trim().toLowerCase(), code: code.trim(), side, name: name.trim() }); }} style={primary(can, { marginTop: 24, width: "100%", opacity: busy ? .7 : 1 })}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>{busy ? "stepping in…" : "step inside together"} <Icon name="arrow" size={18} color={can ? "#fff" : C.inkSoft} /></span>
         </button>
       </div>
     </div>

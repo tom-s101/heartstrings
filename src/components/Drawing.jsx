@@ -206,7 +206,7 @@ function Collab({ room, mine, m }) {
       <Canvas color={C.sage} editable strokes={all} onStroke={pushStroke} palette height={280} />
       <div style={{ display:"flex", gap:10, marginTop:16 }}>
         <button className="press" onClick={saveDrawing} style={ghost}><Icon name="frame" size={17} color={C.ink} /> save</button>
-        <button className="press" onClick={()=>commit((s)=>{ s.d.round=(s.d.round||1)+1; return s; })} style={btn(C.sage,{flex:1})}><Icon name="refresh" size={17} color="#fff" /> clear canvas</button>
+        <button className="press" onClick={()=>{ if(window.confirm("Clear the canvas? This can't be undone.")) commit((s)=>{ s.d.round=(s.d.round||1)+1; return s; }); }} style={btn(C.sage,{flex:1})}><Icon name="refresh" size={17} color="#fff" /> clear canvas</button>
       </div>
       <p style={{ textAlign:"center", fontSize:12, color:C.inkSoft, marginTop:10 }}>one shared canvas — you both draw on it live</p>
     </div>
@@ -235,7 +235,7 @@ function Chain({ room, mine, m }) {
         else { ch.push({ who: mine, type: "draw", value: mineStrokes }); }
         s.d.chain = ch; s.d.round = (s.d.round || 1) + 1; return s;
       });
-      setText("");
+      setText(""); clearMine();
     };
     if (d.revealed || done) return <Reveal chain={chain} onNew={() => commit((s)=>{ s.d.chain=[{who:"her",type:"sentence",value:m.prompts[0]}]; s.d.revealed=false; s.d.round=(s.d.round||1)+1; return s; })} />;
     return (
@@ -257,7 +257,7 @@ function Chain({ room, mine, m }) {
   const SECT = ["head","torso","legs"];
   const step = chain.length; const TURN = step % 2 === 0 ? "him" : "her"; const myTurn = TURN === mine;
   if (d.revealed || step >= SECT.length) return <StackReveal chain={chain} prompt={m.prompts[0]} onNew={()=>commit((s)=>{ s.d.chain=[]; s.d.revealed=false; s.d.round=(s.d.round||1)+1; return s; })} />;
-  const pass = () => { commit((s)=>{ const ch=[...(s.d.chain||[])]; ch.push({ who:mine, type:"band", value:mineStrokes }); s.d.chain=ch; s.d.round=(s.d.round||1)+1; return s; }); };
+  const pass = () => { commit((s)=>{ const ch=[...(s.d.chain||[])]; ch.push({ who:mine, type:"band", value:mineStrokes }); s.d.chain=ch; s.d.round=(s.d.round||1)+1; return s; }); clearMine(); };
   return (
     <div>
       <div style={{ textAlign:"center", marginBottom:12 }}>
@@ -337,12 +337,31 @@ function Canvas({ strokes, editable, hidden, live, onStroke, color, height=230, 
   const [eraser, setEraser] = useState(false);
   const snapshots = useRef([]);
   const redoSnaps = useRef([]);
+  const prevStrokeCount = useRef(0);
 
   useEffect(() => {
     const c = ref.current; if (!c || drawing.current) return;
-    const x = c.getContext("2d"); x.fillStyle=C.paper; x.fillRect(0,0,c.width,c.height); drawStrokes(x, strokes, 1);
-    snapshots.current = []; redoSnaps.current = [];
-  }, [strokes]);
+    const x = c.getContext("2d");
+    const newCount = strokes?.length || 0;
+    const prevCount = prevStrokeCount.current;
+
+    if (newCount < prevCount || newCount === 0) {
+      // Strokes were cleared — full repaint and reset undo history
+      x.fillStyle=C.paper; x.fillRect(0,0,c.width,c.height);
+      if (newCount > 0) drawStrokes(x, strokes, 1);
+      snapshots.current = []; redoSnaps.current = [];
+    } else if (newCount > prevCount && !editable) {
+      // Live partner canvas — draw only new strokes incrementally (fast path)
+      drawStrokes(x, strokes.slice(prevCount), 1);
+    } else if (newCount === prevCount && newCount > 0 && !editable) {
+      // Initial mount with existing strokes (partner canvas)
+      x.fillStyle=C.paper; x.fillRect(0,0,c.width,c.height); drawStrokes(x, strokes, 1);
+    } else if (editable && newCount === 0) {
+      // Editable canvas cleared
+      x.fillStyle=C.paper; x.fillRect(0,0,c.width,c.height);
+    }
+    prevStrokeCount.current = newCount;
+  }, [strokes]); // eslint-disable-line
 
   const pos = (e) => { const r = ref.current.getBoundingClientRect(); return { x: Math.round((e.clientX-r.left)*(320/r.width)), y: Math.round((e.clientY-r.top)*(height/r.height)) }; };
 

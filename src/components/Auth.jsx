@@ -30,7 +30,7 @@ export function Auth() {
       <div className="fin d1" style={card({ width: "100%", maxWidth: 400, marginTop: 24, padding: "26px 24px" })}>
         <div style={{ display: "flex", gap: 6, background: "rgba(255,255,255,.5)", borderRadius: 14, padding: 5, marginBottom: 18 }}>
           {[["in", "Sign in"], ["up", "Sign up"], ["link", "Magic link"]].map(([id, l]) => (
-            <button key={id} className="press" onClick={() => { setTab(id); setMsg(null); }} style={{ flex: 1, border: "none", borderRadius: 10, padding: "9px 4px", cursor: "pointer", background: tab === id ? "#fff" : "transparent", color: tab === id ? C.ink : C.inkSoft, fontWeight: 800, fontSize: 13 }}>{l}</button>
+            <button key={id} className="press" onClick={() => { setTab(id); setMsg(null); setPass(""); }} style={{ flex: 1, border: "none", borderRadius: 10, padding: "9px 4px", cursor: "pointer", background: tab === id ? "#fff" : "transparent", color: tab === id ? C.ink : C.inkSoft, fontWeight: 800, fontSize: 13 }}>{l}</button>
           ))}
         </div>
         {tab === "up" && (<><Label>your name</Label><Input value={name} onChange={setName} placeholder="what should we call you?" /></>)}

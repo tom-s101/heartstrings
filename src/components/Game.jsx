@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useRoom } from "../hooks/useRoom";
-import { C, Icon, Mark } from "../ui";
+import { C, Icon, Mark, DarkToggle } from "../ui";
 
 const MODES = {
   chill:      { icon: "leaf",   label: "Chill Mode",      desc: "No pressure — just enjoy each other ✶" },
@@ -87,6 +87,7 @@ export function Game({ session, user, onLeave, onSignOut }) {
               <IconChip key={id} active={state.feel === id} onClick={() => activateMode(id)} color={meColor} icon={ic} />
             ))}
           </div>
+          <DarkToggle />
           <ExitMenu onLeave={() => setExitModal("leave")} onSignOut={() => setExitModal("signout")} />
         </div>
       </header>

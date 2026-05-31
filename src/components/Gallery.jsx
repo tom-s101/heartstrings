@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { drawStrokes, downloadKeepsake } from "../lib/drawingRender";
-import { C, Icon, card, primary, ghost, Chip } from "../ui";
+import { C, Icon, card, primary, ghost, Chip, useC } from "../ui";
 
 const BASE_W = 320, BASE_H = 230;
 const SUB = {
@@ -12,8 +12,9 @@ const SUB = {
 };
 
 const StrokeImg = memo(function StrokeImg({ strokes, w, color }) {
+  const RC = useC();
   const ref = useRef(null);
-  useEffect(() => { const c = ref.current, d = 2, h = Math.round(w * BASE_H / BASE_W); c.width = w * d; c.height = h * d; const x = c.getContext("2d"); x.scale(d, d); x.fillStyle = C.paper; x.fillRect(0, 0, w, h); drawStrokes(x, strokes || [], w / BASE_W); }, [strokes, w]);
+  useEffect(() => { const c = ref.current, d = 2, h = Math.round(w * BASE_H / BASE_W); c.width = w * d; c.height = h * d; const x = c.getContext("2d"); x.scale(d, d); x.fillStyle = RC.paper; x.fillRect(0, 0, w, h); drawStrokes(x, strokes || [], w / BASE_W); }, [strokes, w, RC.paper]); // eslint-disable-line
   return <div style={{ flex: 1, borderRadius: 12, overflow: "hidden", border: `2px solid ${color}` }}><canvas ref={ref} style={{ width: "100%", display: "block" }} /></div>;
 });
 

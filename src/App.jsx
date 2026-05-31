@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSession, signOut } from "./lib/auth";
-import { Background, C, Icon } from "./ui";
+import { Background, C, Icon, DarkToggle } from "./ui";
 import { Auth } from "./components/Auth";
 import { Join } from "./components/Join";
 import { Game } from "./components/Game";
@@ -35,6 +35,7 @@ export default function App() {
         <Auth />
       ) : !session ? (
         <div style={{ position: "relative", zIndex: 2 }}>
+          <div style={{ position: "absolute", top: 14, right: 16, zIndex: 10 }}><DarkToggle /></div>
           <Join onEnter={enter} />
           <div style={{ textAlign: "center", paddingBottom: 24 }}>
             <button className="press" onClick={handleSignOut} style={{ border: "none", background: "transparent", color: C.inkSoft, fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>sign out</button>

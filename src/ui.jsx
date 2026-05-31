@@ -1,16 +1,20 @@
 import { useState } from "react";
+import { useTheme, useC, LIGHT } from "./lib/theme.jsx";
+export { useTheme, useC } from "./lib/theme.jsx";
 
 /* ============================================================================
    ui.jsx — palette, custom icon set, and shared styling primitives.
-   Every component imports from here so production == the showcase.
+   C uses CSS custom properties so the whole UI flips on dark mode.
+   For canvas ops (fillStyle etc.) call useC() which returns real hex values.
    ============================================================================ */
 
+// Static fallback for non-React usage — actual LIGHT hex values
 export const C = {
-  cream: "#FAF4EA", paper: "#FFFDF8", ink: "#4A3F36", inkSoft: "#8B7C6B",
-  sage: "#90A57F", sageDeep: "#6E8560", gold: "#D9A35B",
-  blue: "#4C6A92", blueDeep: "#33506F", blueLight: "#DEE8F3",
-  rose: "#D688A6", roseDeep: "#B25E80", roseLight: "#F8E4EC",
-  line: "rgba(74,63,54,.10)",
+  cream: "var(--hs-cream)", paper: "var(--hs-paper)", ink: "var(--hs-ink)", inkSoft: "var(--hs-inkSoft)",
+  sage: LIGHT.sage, sageDeep: LIGHT.sageDeep, gold: LIGHT.gold,
+  blue: LIGHT.blue, blueDeep: LIGHT.blueDeep, blueLight: LIGHT.blueLight,
+  rose: LIGHT.rose, roseDeep: LIGHT.roseDeep, roseLight: LIGHT.roseLight,
+  line: "var(--hs-line)",
 };
 
 export function Icon({ name, size = 24, color = C.ink, fill = "none", sw = 1.7, style }) {
@@ -71,56 +75,69 @@ export function Icon({ name, size = 24, color = C.ink, fill = "none", sw = 1.7, 
   }
 }
 
-export const Mark = ({ size = 18 }) => (
-  <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-    <Icon name="wave" size={size} color={C.blue} /><Icon name="lotus" size={size} color={C.rose} />
-  </span>
-);
+export function Mark({ size = 18 }) {
+  const RC = useC();
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+      <Icon name="wave" size={size} color={RC.blue} /><Icon name="lotus" size={size} color={RC.rose} />
+    </span>
+  );
+}
 
 export function Background({ children }) {
+  const { C: RC, dark } = useTheme();
   return (
-    <div style={{ position: "fixed", inset: 0, overflow: "auto", overflowX: "hidden", background: C.cream, fontFamily: "'Nunito', sans-serif", color: C.ink }}>
+    <div style={{ position: "fixed", inset: 0, overflow: "auto", overflowX: "hidden", background: RC.cream, fontFamily: "'Nunito', sans-serif", color: RC.ink, colorScheme: dark ? "dark" : "light" }}>
       <style>{`
+        :root {
+          --hs-cream:${RC.cream}; --hs-paper:${RC.paper}; --hs-ink:${RC.ink}; --hs-inkSoft:${RC.inkSoft};
+          --hs-line:${RC.line};
+          --hs-card-bg:${dark ? "rgba(38,30,52,.92)" : "rgba(255,255,255,.9)"};
+          --hs-card-border:${dark ? "rgba(255,255,255,.11)" : "rgba(255,255,255,.7)"};
+          --hs-chip-bg:${dark ? "rgba(255,255,255,.08)" : "rgba(255,255,255,.7)"};
+          --hs-ghost-bg:${dark ? RC.paper : "#fff"};
+        }
         html,body{overflow-x:hidden;max-width:100%}
-        *{box-sizing:border-box} ::selection{background:${C.roseLight}}
+        *{box-sizing:border-box} ::selection{background:${RC.roseLight}}
         input:focus,textarea:focus{scroll-margin-bottom:320px}
         @media(max-width:420px){.tab-label{display:none}}
         .fin{animation:fin .7s cubic-bezier(.2,.8,.2,1) both}.d1{animation-delay:.12s}
         @keyframes fin{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
         .pop{animation:pop .42s cubic-bezier(.2,.8,.2,1) both}
         @keyframes pop{from{opacity:0;transform:scale(.97) translateY(8px)}to{opacity:1;transform:none}}
-        .blob{position:fixed;border-radius:50%;filter:blur(64px);opacity:.4;z-index:0}
+        .blob{position:fixed;border-radius:50%;filter:blur(64px);opacity:${dark?.25:.4};z-index:0}
         @keyframes drift{0%,100%{transform:translateY(0)}50%{transform:translateY(-22px)}}
         .row{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 12px;scrollbar-width:thin}
-        .row::-webkit-scrollbar{height:6px}.row::-webkit-scrollbar-thumb{background:rgba(0,0,0,.12);border-radius:9px}
+        .row::-webkit-scrollbar{height:6px}.row::-webkit-scrollbar-thumb{background:rgba(128,128,128,.3);border-radius:9px}
         .press{transition:transform .12s ease, box-shadow .18s ease}.press:active{transform:scale(.97)}
         button{font-family:inherit}
+        input,textarea{color-scheme:${dark?"dark":"light"}}
       `}</style>
-      <div className="blob" style={{ width: 360, height: 360, top: -120, left: -120, background: C.blue, animation: "drift 12s ease-in-out infinite" }} />
-      <div className="blob" style={{ width: 360, height: 360, bottom: -120, right: -120, background: C.rose, animation: "drift 14s ease-in-out infinite" }} />
-      <div className="blob" style={{ width: 240, height: 240, top: "42%", left: "44%", background: C.sage, opacity: .22, animation: "drift 16s ease-in-out infinite" }} />
+      <div className="blob" style={{ width: 360, height: 360, top: -120, left: -120, background: RC.blue, animation: "drift 12s ease-in-out infinite" }} />
+      <div className="blob" style={{ width: 360, height: 360, bottom: -120, right: -120, background: RC.rose, animation: "drift 14s ease-in-out infinite" }} />
+      <div className="blob" style={{ width: 240, height: 240, top: "42%", left: "44%", background: RC.sage, opacity: .22, animation: "drift 16s ease-in-out infinite" }} />
       {children}
     </div>
   );
 }
 
 /* ---------- primitives ---------- */
-export const card = (extra = {}) => ({ background: "rgba(255,255,255,.9)", borderRadius: 22, boxShadow: "0 24px 50px -28px rgba(70,60,50,.4)", border: "1px solid rgba(255,255,255,.7)", backdropFilter: "blur(6px)", ...extra });
-export const qText = { fontFamily: "'Fraunces', serif", fontSize: 22, lineHeight: 1.38, margin: 0, fontWeight: 500, textAlign: "center", color: C.ink };
-export const primary = (on, extra = {}) => ({ border: "none", borderRadius: 16, padding: "14px 18px", fontWeight: 800, fontSize: 15.5, color: on ? "#fff" : C.inkSoft, background: on ? `linear-gradient(90deg, ${C.blue}, ${C.rose})` : C.line, cursor: on ? "pointer" : "not-allowed", boxShadow: on ? "0 12px 24px -12px rgba(76,106,146,.5)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, ...extra });
-export const ghost = (extra = {}) => ({ border: `1.5px solid ${C.sage}`, background: "#fff", color: C.ink, borderRadius: 16, padding: "14px 18px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, ...extra });
+export const card = (extra = {}) => ({ background: "var(--hs-card-bg)", borderRadius: 22, boxShadow: "0 24px 50px -28px rgba(70,60,50,.4)", border: "1px solid var(--hs-card-border)", backdropFilter: "blur(6px)", ...extra });
+export const qText = { fontFamily: "'Fraunces', serif", fontSize: 22, lineHeight: 1.38, margin: 0, fontWeight: 500, textAlign: "center", color: "var(--hs-ink)" };
+export const primary = (on, extra = {}) => ({ border: "none", borderRadius: 16, padding: "14px 18px", fontWeight: 800, fontSize: 15.5, color: on ? "#fff" : "var(--hs-inkSoft)", background: on ? `linear-gradient(90deg, ${LIGHT.blue}, ${LIGHT.rose})` : "var(--hs-line)", cursor: on ? "pointer" : "not-allowed", boxShadow: on ? "0 12px 24px -12px rgba(76,106,146,.5)" : "none", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, ...extra });
+export const ghost = (extra = {}) => ({ border: `1.5px solid ${LIGHT.sage}`, background: "var(--hs-ghost-bg)", color: "var(--hs-ink)", borderRadius: 16, padding: "14px 18px", fontWeight: 800, fontSize: 14.5, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, ...extra });
 export const fate = (c) => ({ flex: 1, border: "none", borderRadius: 14, padding: "16px", background: c, color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 });
-export const linkBtn = { border: "none", background: "transparent", color: C.inkSoft, textDecoration: "underline", cursor: "pointer", fontSize: 13, marginTop: 8 };
+export const linkBtn = { border: "none", background: "transparent", color: "var(--hs-inkSoft)", textDecoration: "underline", cursor: "pointer", fontSize: 13, marginTop: 8 };
 
-export const Label = ({ children, style }) => <label style={{ display: "block", fontWeight: 800, fontSize: 11.5, letterSpacing: ".6px", textTransform: "uppercase", color: C.inkSoft, ...style }}>{children}</label>;
-export const Hint = ({ children, style }) => <p style={{ fontSize: 12.5, color: C.inkSoft, margin: 0, ...style }}>{children}</p>;
+export const Label = ({ children, style }) => <label style={{ display: "block", fontWeight: 800, fontSize: 11.5, letterSpacing: ".6px", textTransform: "uppercase", color: "var(--hs-inkSoft)", ...style }}>{children}</label>;
+export const Hint = ({ children, style }) => <p style={{ fontSize: 12.5, color: "var(--hs-inkSoft)", margin: 0, ...style }}>{children}</p>;
 export function Input({ value, onChange, placeholder, type = "text", style }) {
   return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} type={type}
-    style={{ width: "100%", marginTop: 8, padding: "12px 14px", borderRadius: 14, border: `1.5px solid ${C.line}`, fontFamily: "inherit", fontSize: 15, color: C.ink, background: C.paper, outline: "none", ...style }} />;
+    style={{ width: "100%", marginTop: 8, padding: "12px 14px", borderRadius: 14, border: "1.5px solid var(--hs-line)", fontFamily: "inherit", fontSize: 15, color: "var(--hs-ink)", background: "var(--hs-paper)", outline: "none", ...style }} />;
 }
 export function Chip({ active, onClick, color, icon, label, small }) {
   return (
-    <button className="press" onClick={onClick} style={{ border: `1.5px solid ${active ? color : C.line}`, background: active ? color : "rgba(255,255,255,.7)", color: active ? "#fff" : C.inkSoft, borderRadius: 999, padding: small ? "5px 11px" : "7px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6 }}>
+    <button className="press" onClick={onClick} style={{ border: `1.5px solid ${active ? color : "var(--hs-line)"}`, background: active ? color : "var(--hs-chip-bg)", color: active ? "#fff" : "var(--hs-inkSoft)", borderRadius: 999, padding: small ? "5px 11px" : "7px 12px", cursor: "pointer", fontWeight: 700, fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6 }}>
       {icon && <Icon name={icon} size={15} color={active ? "#fff" : color} />}{label}
     </button>
   );
@@ -133,8 +150,19 @@ export function Primary({ onClick, loading, disabled, icon, label }) {
     </button>
   );
 }
-export const Dealing = ({ text }) => (
-  <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "'Caveat',cursive", fontSize: 23, color: C.inkSoft }}>
-    <Icon name="spark" size={20} color={C.inkSoft} /> {text}…
-  </span>
-);
+export function Dealing({ text }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "'Caveat',cursive", fontSize: 23, color: "var(--hs-inkSoft)" }}>
+      <Icon name="spark" size={20} color="var(--hs-inkSoft)" /> {text}…
+    </span>
+  );
+}
+export function DarkToggle() {
+  const { dark, toggle } = useTheme();
+  return (
+    <button className="press" onClick={toggle} title={dark ? "Switch to light mode" : "Switch to dark mode"}
+      style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid var(--hs-line)", background: "var(--hs-chip-bg)" }}>
+      <Icon name={dark ? "spark" : "moon"} size={17} color={dark ? LIGHT.gold : LIGHT.blue} />
+    </button>
+  );
+}

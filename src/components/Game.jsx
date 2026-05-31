@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { useRoom } from "../hooks/useRoom";
-import { signOut } from "../lib/auth";
 import { C, Icon, Mark } from "../ui";
 
 const MODES = {
@@ -15,7 +14,7 @@ import { Gallery } from "./Gallery";
 
 const ONLINE_WINDOW = 12000;
 
-export function Game({ session, user, onLeave }) {
+export function Game({ session, user, onLeave, onSignOut }) {
   const room = useRoom(session.room, session.code, session.side, user, session.name);
   const { state, status, error } = room;
   const [tab, setTab] = useState("questions");
@@ -118,7 +117,7 @@ export function Game({ session, user, onLeave }) {
               <button className="press" onClick={() => setExitModal(null)} style={{ flex: 1, border: `1.5px solid ${C.line}`, background: "#fff", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, cursor: "pointer", color: C.ink }}>
                 Stay
               </button>
-              <button className="press" onClick={() => { setExitModal(null); exitModal === "leave" ? onLeave() : signOut(); }}
+              <button className="press" onClick={() => { setExitModal(null); exitModal === "leave" ? onLeave() : onSignOut(); }}
                 style={{ flex: 1, border: "none", background: `linear-gradient(90deg, ${C.roseDeep}, ${C.blueDeep})`, borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, cursor: "pointer", color: "#fff" }}>
                 {exitModal === "leave" ? "Yes, leave" : "Yes, sign out"}
               </button>

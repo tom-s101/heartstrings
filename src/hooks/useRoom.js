@@ -15,7 +15,7 @@ function blankState() {
     q: { style: "classic", sel: "deep", vibe: "sweet", theme: "",
          round: { shape: "open", prompt: "What's a moment with me you keep replaying in your head?" },
          count: 1, turn: "him", picks: { him: null, her: null }, awarded: false,
-         generating: false, genBy: null },
+         generating: false, genBy: null, history: [] },
     d: { sub: "same", prompt: "our dream date", revealed: false, duration: 60, endsAt: null,
          round: 1, artist: "him" },
     score: { him: 0, her: 0 },
@@ -24,7 +24,7 @@ function blankState() {
   };
 }
 
-export function useRoom(roomName, joinCode, side, user) {
+export function useRoom(roomName, joinCode, side, user, name) {
   const [roomId, setRoomId] = useState(null);
   const [state, setState] = useState(blankState());
   const [online, setOnline] = useState(false);
@@ -83,17 +83,18 @@ export function useRoom(roomName, joinCode, side, user) {
 
       channel.on("presence", { event: "sync" }, () => {
         const st = channel.presenceState();
-        const sides = new Set(Object.values(st).flat().map((m) => m.side));
+        const members = Object.values(st).flat();
+        const bySide = Object.fromEntries(members.map((m) => [m.side, m]));
         setState((prev) => ({ ...prev, players: {
-          him: { lastSeen: sides.has("him") ? Date.now() : 0 },
-          her: { lastSeen: sides.has("her") ? Date.now() : 0 },
+          him: { lastSeen: bySide.him ? Date.now() : 0, name: bySide.him?.name || prev.players?.him?.name || "" },
+          her: { lastSeen: bySide.her ? Date.now() : 0, name: bySide.her?.name || prev.players?.her?.name || "" },
         } }));
       });
 
       await channel.subscribe(async (st) => {
         if (st === "SUBSCRIBED") {
           setOnline(true); setStatus("live");
-          await channel.track({ side, uid: clientId.current });
+          await channel.track({ side, uid: clientId.current, name: name || "" });
           // re-sync state on (re)connect so we never miss changes made while away
           const { data: fresh } = await supabase.from("room_state").select("*").eq("room_id", rid).single();
           if (fresh) applyRow(fresh);
@@ -150,6 +151,10 @@ export function useRoom(roomName, joinCode, side, user) {
     if (!round) round = { shape: "open", prompt: "Tell me about a moment today you wished I'd been there for." };
     try {
       await commit((s) => {
+        // Save current question to history before replacing
+        if (s.q.round?.prompt) {
+          s.q.history = [...(s.q.history || []), { prompt: s.q.round.prompt, sel: s.q.sel, at: Date.now() }].slice(-30);
+        }
         s.q.round = round; s.q.count = (s.q.count || 1) + 1;
         s.q.turn = s.q.turn === "him" ? "her" : "him";
         s.q.picks = { him: null, her: null }; s.q.awarded = false;

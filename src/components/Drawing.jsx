@@ -333,23 +333,97 @@ function Controls({ feel, d, isP, amArtist, onStart, onReveal, onGotIt, onSave, 
 function Canvas({ strokes, editable, hidden, live, onStroke, color, height=230, palette }) {
   const ref = useRef(null), drawing = useRef(false), cur = useRef(null);
   const [brush, setBrush] = useState(color);
-  useEffect(() => { const c = ref.current; if (!c || drawing.current) return; const x = c.getContext("2d"); x.fillStyle=C.paper; x.fillRect(0,0,c.width,c.height); drawStrokes(x, strokes, 1); }, [strokes]);
+  const [brushSize, setBrushSize] = useState(3.4);
+  const [eraser, setEraser] = useState(false);
+  const snapshots = useRef([]);
+  const redoSnaps = useRef([]);
+
+  useEffect(() => {
+    const c = ref.current; if (!c || drawing.current) return;
+    const x = c.getContext("2d"); x.fillStyle=C.paper; x.fillRect(0,0,c.width,c.height); drawStrokes(x, strokes, 1);
+    snapshots.current = []; redoSnaps.current = [];
+  }, [strokes]);
+
   const pos = (e) => { const r = ref.current.getBoundingClientRect(); return { x: Math.round((e.clientX-r.left)*(320/r.width)), y: Math.round((e.clientY-r.top)*(height/r.height)) }; };
-  const down = (e) => { if(!editable) return; drawing.current=true; const p=pos(e); cur.current={color:brush,pts:[[p.x,p.y]]}; ref.current.setPointerCapture?.(e.pointerId); };
-  const move = (e) => { if(!editable||!drawing.current) return; e.preventDefault(); const p=pos(e),x=ref.current.getContext("2d"),l=cur.current.pts.at(-1); x.strokeStyle=brush;x.lineWidth=3.4;x.lineCap="round";x.lineJoin="round";x.beginPath();x.moveTo(l[0],l[1]);x.lineTo(p.x,p.y);x.stroke(); cur.current.pts.push([p.x,p.y]); };
-  const up = () => { if(!editable||!drawing.current) return; drawing.current=false; if(cur.current?.pts.length) onStroke?.(cur.current); cur.current=null; };
+
+  const down = (e) => {
+    if (!editable) return; drawing.current=true;
+    const p = pos(e);
+    cur.current = { color: eraser ? C.paper : brush, w: eraser ? brushSize*3 : brushSize, pts: [[p.x,p.y]] };
+    ref.current.setPointerCapture?.(e.pointerId);
+  };
+
+  const move = (e) => {
+    if (!editable||!drawing.current) return; e.preventDefault();
+    const p=pos(e), x=ref.current.getContext("2d"), l=cur.current.pts.at(-1);
+    x.strokeStyle=cur.current.color; x.lineWidth=cur.current.w; x.lineCap="round"; x.lineJoin="round";
+    x.beginPath(); x.moveTo(l[0],l[1]); x.lineTo(p.x,p.y); x.stroke();
+    cur.current.pts.push([p.x,p.y]);
+  };
+
+  const up = () => {
+    if (!editable||!drawing.current) return; drawing.current=false;
+    if (cur.current?.pts.length) {
+      const c = ref.current;
+      snapshots.current.push(c.getContext("2d").getImageData(0,0,c.width,c.height));
+      redoSnaps.current = [];
+      onStroke?.(cur.current);
+    }
+    cur.current = null;
+  };
+
+  const handleUndo = () => {
+    if (!snapshots.current.length) return;
+    redoSnaps.current.push(snapshots.current.pop());
+    const c = ref.current; const x = c.getContext("2d");
+    if (snapshots.current.length) { x.putImageData(snapshots.current[snapshots.current.length-1], 0, 0); }
+    else { x.fillStyle=C.paper; x.fillRect(0,0,c.width,c.height); drawStrokes(x, strokes, 1); }
+  };
+
+  const handleRedo = () => {
+    if (!redoSnaps.current.length) return;
+    const snap = redoSnaps.current.pop(); snapshots.current.push(snap);
+    ref.current.getContext("2d").putImageData(snap, 0, 0);
+  };
+
   const colors = [color, C.ink, C.sage, C.gold, C.rose, C.blue];
+  const SIZES = [[2,"S"],[3.4,"M"],[7,"L"]];
+
   return (
     <div>
-      <div style={{ position:"relative", borderRadius:16, overflow:"hidden", border:`2px solid ${color}`, boxShadow:`0 8px 20px -14px ${color}` }}>
-        <canvas ref={ref} width={320} height={height} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} style={{ width:"100%", display:"block", touchAction:"none", cursor:editable?"crosshair":"default" }} />
+      <div style={{ position:"relative", borderRadius:16, overflow:"hidden", border:`2px solid ${eraser?C.inkSoft:color}`, boxShadow:`0 8px 20px -14px ${color}` }}>
+        <canvas ref={ref} width={320} height={height} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
+          style={{ width:"100%", display:"block", touchAction:"none", cursor:editable?(eraser?"cell":"crosshair"):"default" }} />
         {hidden && <div style={{ position:"absolute", inset:0, backdropFilter:"blur(8px)", background:`${C.cream}e6`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4 }}><Icon name="brush" size={26} color={color} /><span style={{ fontFamily:"'Caveat',cursive", fontSize:19, color }}>hidden until reveal</span></div>}
         {live && <span style={{ position:"absolute", top:8, right:8, width:8, height:8, borderRadius:999, background:"#E05a5a" }} />}
       </div>
       {palette && editable && (
-        <div style={{ display:"flex", gap:7, marginTop:8, alignItems:"center" }}>
-          <Icon name="palette" size={16} color={C.inkSoft} />
-          {colors.map((p)=><button key={p} className="press" onClick={()=>setBrush(p)} style={{ width:20, height:20, borderRadius:999, cursor:"pointer", background:p, border:brush===p?`2px solid ${C.ink}`:`1px solid ${C.line}` }} />)}
+        <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:6 }}>
+          <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+            <Icon name="palette" size={15} color={C.inkSoft} />
+            {colors.map((p)=>(
+              <button key={p} className="press" onClick={()=>{ setBrush(p); setEraser(false); }}
+                style={{ width:20, height:20, borderRadius:999, cursor:"pointer", background:p, border:!eraser&&brush===p?`2px solid ${C.ink}`:`1px solid ${C.line}` }} />
+            ))}
+            <button className="press" onClick={()=>setEraser(v=>!v)}
+              style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"3px 9px", borderRadius:999, border:`1.5px solid ${eraser?C.ink:C.line}`, background:eraser?C.ink:"transparent", cursor:"pointer" }}>
+              <Icon name="eraser" size={13} color={eraser?"#fff":C.inkSoft} />
+              <span style={{ fontSize:11, fontWeight:700, color:eraser?"#fff":C.inkSoft }}>erase</span>
+            </button>
+          </div>
+          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+            {SIZES.map(([sz,lbl])=>(
+              <button key={sz} className="press" onClick={()=>{ setBrushSize(sz); setEraser(false); }}
+                style={{ width:30, height:30, borderRadius:8, border:`1.5px solid ${brushSize===sz&&!eraser?color:C.line}`, background:brushSize===sz&&!eraser?`${color}22`:"transparent", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <div style={{ width:sz*2, height:sz*2, borderRadius:999, background:color }} />
+              </button>
+            ))}
+            <div style={{ flex:1 }} />
+            <button className="press" onClick={handleUndo}
+              style={{ padding:"4px 10px", borderRadius:8, border:`1.5px solid ${C.line}`, background:"transparent", cursor:"pointer", fontSize:13, fontWeight:700, color:C.inkSoft }}>↩ undo</button>
+            <button className="press" onClick={handleRedo}
+              style={{ padding:"4px 10px", borderRadius:8, border:`1.5px solid ${C.line}`, background:"transparent", cursor:"pointer", fontSize:13, fontWeight:700, color:C.inkSoft }}>↪ redo</button>
+          </div>
         </div>
       )}
     </div>

@@ -5,7 +5,8 @@ export function Join({ onEnter }) {
   const [room, setRoom] = useState("");
   const [code, setCode] = useState("");
   const [side, setSide] = useState(null);
-  const can = room.trim().length > 1 && code.trim().length >= 4 && side;
+  const [name, setName] = useState("");
+  const can = room.trim().length > 1 && code.trim().length >= 4 && side && name.trim().length > 0;
 
   return (
     <div style={{ minHeight: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "34px 20px", position: "relative", zIndex: 2 }}>
@@ -16,7 +17,9 @@ export function Join({ onEnter }) {
       </div>
 
       <div className="fin d1" style={card({ width: "100%", maxWidth: 430, marginTop: 24, padding: "28px 26px" })}>
-        <Label>room name</Label>
+        <Label>your name</Label>
+        <Input value={name} onChange={setName} placeholder="e.g. Matheson or Lyka" />
+        <Label style={{ marginTop: 16 }}>room name</Label>
         <Input value={room} onChange={setRoom} placeholder="e.g. our-little-corner" />
         <Label style={{ marginTop: 16 }}>secret code</Label>
         <div style={{ position: "relative" }}>
@@ -31,7 +34,7 @@ export function Join({ onEnter }) {
           <SideCard active={side === "her"} onClick={() => setSide("her")} icon="lotus" color={C.rose} deep={C.roseDeep} light={C.roseLight} label="Her side" sub="the soft rose" />
         </div>
 
-        <button className="press" disabled={!can} onClick={() => onEnter({ room: room.trim().toLowerCase(), code: code.trim(), side })} style={primary(can, { marginTop: 24, width: "100%" })}>
+        <button className="press" disabled={!can} onClick={() => onEnter({ room: room.trim().toLowerCase(), code: code.trim(), side, name: name.trim() })} style={primary(can, { marginTop: 24, width: "100%" })}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>step inside together <Icon name="arrow" size={18} color={can ? "#fff" : C.inkSoft} /></span>
         </button>
       </div>

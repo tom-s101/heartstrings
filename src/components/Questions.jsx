@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { C, Icon, card, qText, Chip, Primary, Dealing, fate, linkBtn } from "../ui";
 
 const CATS = [
@@ -20,7 +21,7 @@ const CHOICES = {
   agreeDisagree: [{ k: "agree", label: "Agree", icon: "thumbUp", c: C.sageDeep }, { k: "disagree", label: "Disagree", icon: "thumbDown", c: C.roseDeep }],
 };
 
-export function Questions({ room, mine }) {
+export function Questions({ room, mine, names }) {
   const { state, commit, generateQuestion } = room;
   const q = state.q;
   const meColor = mine === "him" ? C.blue : C.rose;
@@ -44,18 +45,46 @@ export function Questions({ room, mine }) {
   // a hung/abandoned generation (e.g. partner dropped mid-generate) self-heals after 18s
   const stale = q.generating && q.genAt && Date.now() - q.genAt > 18000;
   const next = () => generateQuestion({ sel: q.sel, vibe: q.vibe, theme: q.theme });
+  const [view, setView] = useState("play"); // "play" | "history"
 
   return (
     <div>
       <div style={{ display: "flex", gap: 8, background: "rgba(255,255,255,.55)", borderRadius: 16, padding: 6, marginBottom: 18 }}>
-        {[["classic", "chat", "Classic"], ["games", "card", "Game modes"]].map(([id, ic, l]) => (
-          <button key={id} className="press" onClick={() => setStyle(id)} style={{ flex: 1, border: "none", borderRadius: 12, padding: "11px", cursor: "pointer", background: q.style === id ? "#fff" : "transparent", color: q.style === id ? C.ink : C.inkSoft, fontWeight: 800, fontSize: 14.5, boxShadow: q.style === id ? "0 8px 18px -12px rgba(0,0,0,.5)" : "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
-            <Icon name={ic} size={17} color={q.style === id ? C.ink : C.inkSoft} /> {l}
-          </button>
-        ))}
+        {[["classic", "chat", "Classic"], ["games", "card", "Game modes"], ["history", "refresh", `History${q.history?.length ? ` (${q.history.length})` : ""}`]].map(([id, ic, l]) => {
+          const isView = id === "history";
+          const active = isView ? view === "history" : (view === "play" && q.style === id);
+          return (
+            <button key={id} className="press"
+              onClick={() => isView ? setView(v => v === "history" ? "play" : "history") : (setView("play"), setStyle(id))}
+              style={{ flex: 1, border: "none", borderRadius: 12, padding: "11px 6px", cursor: "pointer", background: active ? "#fff" : "transparent", color: active ? C.ink : C.inkSoft, fontWeight: 800, fontSize: 13.5, boxShadow: active ? "0 8px 18px -12px rgba(0,0,0,.5)" : "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <Icon name={ic} size={16} color={active ? C.ink : C.inkSoft} /> {l}
+            </button>
+          );
+        })}
       </div>
 
-      {q.style === "classic" ? (
+      {view === "history" ? (
+        <div>
+          {!q.history?.length ? (
+            <div style={{ textAlign: "center", padding: "40px 0", color: C.inkSoft }}>
+              <Icon name="chat" size={32} color={C.line} style={{ margin: "0 auto 10px" }} />
+              <p style={{ fontFamily: "'Caveat',cursive", fontSize: 20 }}>no questions yet — generate one to start!</p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[...q.history].reverse().map((h, i) => (
+                <div key={i} style={{ background: "rgba(255,255,255,.85)", borderRadius: 16, padding: "14px 16px", border: `1px solid ${C.line}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, color: C.inkSoft }}>
+                    <Icon name="chat" size={13} color={C.inkSoft} />
+                    <span style={{ fontSize: 11.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".5px" }}>{h.sel} · #{q.history.length - i}</span>
+                  </div>
+                  <p style={{ fontFamily: "'Fraunces',serif", fontSize: 16, margin: 0, color: C.ink, lineHeight: 1.4 }}>{h.prompt}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : q.style === "classic" ? (
         <>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
             {CATS.map((c) => <Chip key={c.id} active={q.sel === c.id} color={meColor} icon={c.icon} label={c.label} onClick={() => setSel(c.id)} />)}
@@ -65,7 +94,7 @@ export function Questions({ room, mine }) {
             <p style={qText}>{q.round?.prompt}</p>
           </Card>
           <Primary onClick={next} loading={q.generating && !stale} icon="spark" label={q.generating ? "thinking…" : "new question"} />
-          <Turn turn={q.turn} />
+          <Turn turn={q.turn} names={names} />
         </>
       ) : (
         <>
@@ -88,12 +117,14 @@ export function Questions({ room, mine }) {
             <RoundCard round={q.round} picks={q.picks} mine={mine} setPick={setPick} td={td} setTd={setTd} />
           </Card>
           <Primary onClick={next} loading={q.generating && !stale} icon="refresh" label={q.generating ? "dealing…" : "new round"} />
-          <p style={{ textAlign: "center", fontSize: 12, color: C.inkSoft, marginTop: 10 }}>each of you taps your own answer — then see if you match</p>
+          <Turn turn={q.turn} names={names} />
+          <p style={{ textAlign: "center", fontSize: 12, color: C.inkSoft, marginTop: 6 }}>each of you taps your own answer — then see if you match</p>
         </>
       )}
     </div>
   );
 }
+
 
 function Card({ count, icon, name, generating, genMine, children }) {
   return (
@@ -105,16 +136,32 @@ function Card({ count, icon, name, generating, genMine, children }) {
     </div>
   );
 }
-const ThemeInput = ({ value, onChange }) => (
-  <input value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder="optional theme… e.g. our future, food, travel"
-    style={{ width: "100%", padding: "10px 12px", borderRadius: 13, border: `1.5px solid ${C.line}`, fontFamily: "inherit", fontSize: 14, color: C.ink, background: C.paper, outline: "none", marginBottom: 16 }} />
-);
-const Turn = ({ turn }) => (
-  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 12 }}>
-    <Icon name={turn === "him" ? "wave" : "lotus"} size={16} color={turn === "him" ? C.blue : C.rose} />
-    <span style={{ fontFamily: "'Caveat',cursive", fontSize: 18, color: C.inkSoft }}>{turn === "him" ? "his" : "her"} turn to answer first</span>
-  </div>
-);
+function ThemeInput({ value, onChange }) {
+  const [local, setLocal] = useState(value || "");
+  // Sync inward only when room state changes from outside (e.g. partner clears it)
+  const prev = useState(value)[0];
+  if (value !== prev && value !== local) setLocal(value || "");
+  const flush = () => { if (local !== value) onChange(local); };
+  return (
+    <input
+      value={local}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={flush}
+      onKeyDown={(e) => e.key === "Enter" && flush()}
+      placeholder="optional theme… e.g. our future, food, travel"
+      style={{ width: "100%", padding: "10px 12px", borderRadius: 13, border: `1.5px solid ${C.line}`, fontFamily: "inherit", fontSize: 14, color: C.ink, background: C.paper, outline: "none", marginBottom: 16 }} />
+  );
+}
+const Turn = ({ turn, names }) => {
+  const name = names?.[turn]?.name || (turn === "him" ? "his" : "her");
+  const possessive = names?.[turn]?.name ? `${name}'s` : name;
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 12 }}>
+      <Icon name={turn === "him" ? "wave" : "lotus"} size={16} color={turn === "him" ? C.blue : C.rose} />
+      <span style={{ fontFamily: "'Caveat',cursive", fontSize: 18, color: C.inkSoft }}>{possessive} turn to answer first</span>
+    </div>
+  );
+};
 
 function RoundCard({ round, picks, mine, setPick, td, setTd }) {
   if (!round) return null;

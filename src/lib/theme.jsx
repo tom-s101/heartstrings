@@ -2,7 +2,7 @@ import { createContext, useContext, useState } from "react";
 
 export const THEMES = {
   default: {
-    name: "Default", emoji: "🌿",
+    name: "Default", emoji: "🌿", icon: "leaf",
     cream:"#FAF4EA", paper:"#FFFDF8", ink:"#4A3F36", inkSoft:"#8B7C6B",
     sage:"#90A57F", sageDeep:"#6E8560", gold:"#D9A35B",
     blue:"#4C6A92", blueDeep:"#33506F", blueLight:"#DEE8F3",
@@ -10,7 +10,7 @@ export const THEMES = {
     line:"rgba(74,63,54,.10)", dark:false,
   },
   sakura: {
-    name: "Sakura", emoji: "🌸",
+    name: "Sakura", emoji: "🌸", icon: "flower",
     cream:"#FFF0F5", paper:"#FFFBFD", ink:"#3D2033", inkSoft:"#B080A0",
     sage:"#90A57F", sageDeep:"#6E8560", gold:"#D9A35B",
     blue:"#4C6A92", blueDeep:"#33506F", blueLight:"#F5E8F0",
@@ -18,7 +18,7 @@ export const THEMES = {
     line:"rgba(255,107,157,.2)", dark:false,
   },
   midnight: {
-    name: "Midnight", emoji: "🌙",
+    name: "Midnight", emoji: "🌙", icon: "moon",
     cream:"#16121E", paper:"#1E1928", ink:"#EDE0D0", inkSoft:"#9A8878",
     sage:"#7A9169", sageDeep:"#A8C494", gold:"#D9A35B",
     blue:"#6B8FBE", blueDeep:"#8FAFD8", blueLight:"#1A2535",
@@ -26,7 +26,7 @@ export const THEMES = {
     line:"rgba(255,255,255,.11)", dark:true,
   },
   candy: {
-    name: "Candy Pop", emoji: "💜",
+    name: "Candy Pop", emoji: "💜", icon: "palette",
     cream:"#FBF7FF", paper:"#FFFFFF", ink:"#2A1F3D", inkSoft:"#9080B0",
     sage:"#6B9E6E", sageDeep:"#4A7A4D", gold:"#E9A020",
     blue:"#5B75B5", blueDeep:"#3A5490", blueLight:"#E8EEFF",

@@ -81,16 +81,16 @@ export function Game({ session, user, onLeave, onSignOut }) {
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap", minWidth: 0 }}>
           {state.feel === "gamenight" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.7)", borderRadius: 999, padding: "5px 11px", border: `1px solid ${C.line}` }}>
-              <Icon name="wave" size={14} color={C.blue} /><b style={{ fontSize: 13, color: C.blueDeep }}>{state.score?.him || 0}</b>
-              <span style={{ color: C.inkSoft }}>–</span>
-              <b style={{ fontSize: 13, color: C.roseDeep }}>{state.score?.her || 0}</b><Icon name="lotus" size={14} color={C.rose} />
+            <div style={{ display: "flex", alignItems: "center", gap: 4, background: "var(--hs-chip-bg)", borderRadius: 999, padding: "4px 8px", border: "1px solid var(--hs-line)", flexShrink: 0 }}>
+              <Icon name="wave" size={12} color={C.blue} /><b style={{ fontSize: 12, color: C.blueDeep }}>{state.score?.him || 0}</b>
+              <span style={{ color: "var(--hs-inkSoft)", fontSize: 11 }}>–</span>
+              <b style={{ fontSize: 12, color: C.roseDeep }}>{state.score?.her || 0}</b><Icon name="lotus" size={12} color={C.rose} />
             </div>
           )}
           <Presence partnerOnline={partnerOnline} status={status} />
-          <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
             {[["chill", "leaf"], ["structured", "timer"], ["gamenight", "trophy"]].map(([id, ic]) => (
               <IconChip key={id} active={state.feel === id} onClick={() => activateMode(id)} color={meColor} icon={ic} />
             ))}

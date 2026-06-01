@@ -3,7 +3,7 @@ import { C, Icon, card, qText, Chip, Primary, Dealing, fate, linkBtn } from "../
 
 const CATS = [
   { id: "deep", label: "Deep", icon: "moon" }, { id: "silly", label: "Silly", icon: "spark" },
-  { id: "spicy", label: "Spicy", icon: "flame" }, { id: "wholesome", label: "Wholesome", icon: "flower" },
+  { id: "romantic", label: "Romantic", icon: "heart" }, { id: "wholesome", label: "Wholesome", icon: "flower" },
   { id: "hypothetical", label: "Hypothetical", icon: "dice" },
 ];
 const FORMATS = [

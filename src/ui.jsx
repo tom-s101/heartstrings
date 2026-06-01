@@ -24,7 +24,7 @@ export function Icon({ name, size = 24, color = "var(--hs-ink)", fill = "none", 
   const F = { style: { fill: color, stroke: "none" } }; // filled accent shapes
   const svg = (ch) => <svg viewBox="0 0 24 24" style={s}>{ch}</svg>;
   switch (name) {
-    case "heart": return svg(<path d="M12 20s-6.7-4.2-9.2-8.4C1 8.6 2.6 5.6 5.7 5.6c1.9 0 3.2 1.1 4.3 2.5C11.1 6.7 12.4 5.6 14.3 5.6c3.1 0 4.7 3 2.9 6C18.7 15.8 12 20 12 20Z" {...F} />);
+    case "heart": return svg(<path d="M12 21.5C6.5 17 1 13 1 8.5 1 5.4 3.4 3 6.5 3c1.7 0 3.4.8 4.5 2.1C12.1 3.8 13.8 3 15.5 3c3.1 0 5.5 2.4 5.5 5.5 0 4.5-5.5 8.5-11 13z" {...F} />);
     case "wave": return svg(<><path d="M2.5 13q3.2-3.2 6.3 0t6.3 0 6.3 0" {...P} /><path d="M2.5 8.5q3.2-3.2 6.3 0t6.3 0 6.3 0" {...P} /></>);
     case "lotus": { const petal = "M12 15.5C9.6 12 9.6 8 12 5.4 14.4 8 14.4 12 12 15.5Z"; return svg(<>{[-66,-33,0,33,66].map((a) => <path key={a} d={petal} transform={`rotate(${a} 12 15.5)`} {...P} />)}<path d="M4.8 15.8C8.4 19 15.6 19 19.2 15.8" {...P} /></>); }
     case "arrow": return svg(<><path d="M4 12h15" {...P} /><path d="M13 6l6 6-6 6" {...P} /></>);
@@ -184,12 +184,8 @@ export function ThemePicker({ onPick } = {}) {
   return (
     <div data-themepicker style={{ position: "relative" }}>
       <button ref={btnRef} className="press" onClick={toggle} title="Change theme"
-        style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid var(--hs-line)", background: "var(--hs-chip-bg)", gap: 2, padding: 0 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", width: 18, height: 18, gap: 2 }}>
-          {[active.rose, active.blue, active.sage, active.cream].map((col, i) => (
-            <div key={i} style={{ width: 7, height: 7, borderRadius: 2, background: col, border: "1px solid rgba(0,0,0,.1)" }} />
-          ))}
-        </div>
+        style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid var(--hs-line)", background: "var(--hs-chip-bg)" }}>
+        <Icon name={active.icon || "palette"} size={17} color="var(--hs-rose)" />
       </button>
       {open && (
         <div data-themepicker className="pop" style={{ position: "fixed", right: pos.right, top: pos.top, background: "var(--hs-card-bg)", backdropFilter: "blur(12px)", borderRadius: 18, boxShadow: "0 20px 50px -10px rgba(0,0,0,.35)", border: "1px solid var(--hs-card-border)", zIndex: 100, minWidth: 210, padding: 8 }}>
@@ -199,13 +195,11 @@ export function ThemePicker({ onPick } = {}) {
             return (
               <button key={key} className="press" onClick={() => { setTheme(key); onPick?.(key); setOpen(false); }}
                 style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", border: "none", background: on ? "var(--hs-chip-bg)" : "transparent", borderRadius: 12, cursor: "pointer" }}>
-                <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
-                  {[t.rose, t.blue, t.sage, t.cream].map((col, i) => (
-                    <div key={i} style={{ width: 14, height: 14, borderRadius: 4, background: col, border: "1px solid rgba(0,0,0,.12)" }} />
-                  ))}
+                <div style={{ width: 30, height: 30, borderRadius: 9, border: `1.5px solid ${on ? t.rose : "var(--hs-line)"}`, background: on ? `${t.rose}22` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Icon name={t.icon || "palette"} size={15} color={t.rose} />
                 </div>
-                <span style={{ fontSize: 14, fontWeight: on ? 800 : 600, color: "var(--hs-ink)", flex: 1, textAlign: "left" }}>{t.emoji} {t.name}</span>
-                {on && <span style={{ fontSize: 16, color: "var(--hs-rose)" }}>✓</span>}
+                <span style={{ fontSize: 14, fontWeight: on ? 800 : 600, color: "var(--hs-ink)", flex: 1, textAlign: "left" }}>{t.name}</span>
+                {on && <Icon name="check" size={16} color="var(--hs-rose)" />}
               </button>
             );
           })}

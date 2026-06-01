@@ -36,7 +36,7 @@ export function Creative({ room, mine }) {
       <div key={tool} className="pop" style={card({ padding: 20, marginTop: 6 })}>
         {tool === "story" && <Story c={c} setC={setC} mine={mine} ai={room.aiAssist} />}
         {tool === "melody" && <Melody c={c} setC={setC} mine={mine} />}
-        {tool === "tier" && <Tier c={c} setC={setC} />}
+        {tool === "tier" && <Tier c={c} setC={setC} ai={room.aiAssist} />}
         {tool === "vault" && <Vault c={c} setC={setC} mine={mine} />}
         {tool === "mosaic" && <Mosaic c={c} setC={setC} mine={mine} />}
         {tool === "kitchen" && <Kitchen c={c} setC={setC} />}
@@ -109,27 +109,50 @@ function Melody({ c, setC, mine }) {
 }
 
 /* 3 Tier List */
-const TIER_CATS = { "Date ideas": ["picnic", "movie night", "road trip", "cooking in", "stargazing", "museum", "beach day", "arcade"], "Snacks": ["popcorn", "ice cream", "fries", "sushi", "chocolate", "mango", "ramen", "tacos"], "Future pets": ["golden pup", "fat cat", "bunny", "parrot", "corgi", "turtle"] };
-const TIERS = ["S", "A", "B", "C"]; const TIER_C = { S: C.rose, A: C.gold, B: C.sage, C: C.blue };
-function Tier({ c, setC }) {
-  const t = c.tier || { cat: "Date ideas", board: {} };
+const TIER_PRESETS = { “Date ideas”: [“picnic”, “movie night”, “road trip”, “cooking in”, “stargazing”, “museum”, “beach day”, “arcade”], “Snacks”: [“popcorn”, “ice cream”, “fries”, “sushi”, “chocolate”, “mango”, “ramen”, “tacos”], “Future pets”: [“golden pup”, “fat cat”, “bunny”, “parrot”, “corgi”, “turtle”] };
+const TIERS = [“S”, “A”, “B”, “C”]; const TIER_C = { S: C.rose, A: C.gold, B: C.sage, C: C.blue };
+function Tier({ c, setC, ai }) {
+  const t = c.tier || { cat: “Date ideas”, items: TIER_PRESETS[“Date ideas”], board: {} };
   const [sel, setSel] = useState(null);
+  const [custom, setCustom] = useState(“”);
+  const [genBusy, setGenBusy] = useState(false);
   const placed = Object.values(t.board).flat();
-  const pool = (TIER_CATS[t.cat] || []).filter((x) => !placed.includes(x));
-  const place = (tier) => { if (!sel) return; setC((cc) => { const b = { ...(cc.tier?.board || {}) }; TIERS.forEach((k) => b[k] = (b[k] || []).filter((x) => x !== sel)); b[tier] = [...(b[tier] || []), sel]; cc.tier = { cat: t.cat, board: b }; }); setSel(null); };
+  const pool = (t.items || TIER_PRESETS[t.cat] || []).filter((x) => !placed.includes(x));
+  const place = (tier) => { if (!sel) return; setC((cc) => { const b = { ...(cc.tier?.board || {}) }; TIERS.forEach((k) => b[k] = (b[k] || []).filter((x) => x !== sel)); b[tier] = [...(b[tier] || []), sel]; cc.tier = { ...cc.tier, board: b }; }); setSel(null); };
+  const pickPreset = (k) => { setSel(null); setC((cc) => { cc.tier = { cat: k, items: TIER_PRESETS[k], board: {} }; }); };
+  const generateItems = async () => {
+    if (!custom.trim()) return;
+    setGenBusy(true);
+    const res = await ai(`Generate exactly 12 short, fun items (2-4 words each) for a tier list about: “${custom.trim()}”. Return ONLY a JSON array of strings, nothing else. Example: [“item one”,”item two”,...]`);
+    setGenBusy(false);
+    if (res) {
+      try {
+        const items = JSON.parse(res.match(/\[.*\]/s)?.[0] || “[]”);
+        if (items.length) { setSel(null); setC((cc) => { cc.tier = { cat: custom.trim(), items, board: {} }; }); setCustom(“”); }
+      } catch {}
+    }
+  };
   return (
     <div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, justifyContent: "center" }}>{Object.keys(TIER_CATS).map((k) => <Pill key={k} active={t.cat === k} onClick={() => { setSel(null); setC((cc) => { cc.tier = { cat: k, board: {} }; }); }}>{k}</Pill>)}</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+      <div style={{ display: “flex”, gap: 6, flexWrap: “wrap”, marginBottom: 10, justifyContent: “center” }}>
+        {Object.keys(TIER_PRESETS).map((k) => <Pill key={k} active={t.cat === k} onClick={() => pickPreset(k)}>{k}</Pill>)}
+      </div>
+      <div style={{ display: “flex”, gap: 8, marginBottom: 14 }}>
+        <input value={custom} onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => e.key === “Enter” && generateItems()} placeholder=”custom category… e.g. Studio Ghibli movies” style={{ ...inp, flex: 1, marginBottom: 0 }} />
+        <button className=”press” onClick={generateItems} disabled={!custom.trim() || genBusy} style={{ ...btn(grad), padding: “0 14px”, opacity: genBusy ? .6 : 1, flexShrink: 0 }}>
+          {genBusy ? “…” : <><span style={{ fontSize: 16 }}>✦</span> generate</>}
+        </button>
+      </div>
+      <div style={{ display: “flex”, flexDirection: “column”, gap: 6, marginBottom: 12 }}>
         {TIERS.map((tier) => (
-          <div key={tier} onClick={() => place(tier)} style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44, borderRadius: 12, padding: "6px 8px", background: C.paper, border: `1.5px solid ${sel ? TIER_C[tier] : C.line}`, cursor: sel ? "pointer" : "default" }}>
-            <span style={{ width: 30, height: 30, borderRadius: 8, background: TIER_C[tier], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontFamily: "'Fraunces',serif" }}>{tier}</span>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{(t.board[tier] || []).map((x) => <span key={x} style={tag}>{x}</span>)}</div>
+          <div key={tier} onClick={() => place(tier)} style={{ display: “flex”, alignItems: “center”, gap: 8, minHeight: 44, borderRadius: 12, padding: “6px 8px”, background: “var(--hs-paper)”, border: `1.5px solid ${sel ? TIER_C[tier] : C.line}`, cursor: sel ? “pointer” : “default” }}>
+            <span style={{ width: 30, height: 30, borderRadius: 8, background: TIER_C[tier], color: “#fff”, display: “flex”, alignItems: “center”, justifyContent: “center”, fontWeight: 800, fontFamily: “'Fraunces',serif”, flexShrink: 0 }}>{tier}</span>
+            <div style={{ display: “flex”, gap: 6, flexWrap: “wrap” }}>{(t.board[tier] || []).map((x) => <span key={x} style={tag}>{x}</span>)}</div>
           </div>
         ))}
       </div>
-      <div style={{ fontFamily: "'Caveat',cursive", fontSize: 17, color: C.inkSoft, marginBottom: 6 }}>{sel ? `tap a tier to place “${sel}”` : "tap an item, then a tier"}</div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{pool.map((x) => <button key={x} className="press" onClick={() => setSel(x)} style={{ ...tag, cursor: "pointer", border: `1.5px solid ${sel === x ? C.ink : C.line}`, background: sel === x ? C.ink : "#fff", color: sel === x ? "#fff" : C.ink }}>{x}</button>)}</div>
+      <div style={{ fontFamily: “'Caveat',cursive”, fontSize: 17, color: C.inkSoft, marginBottom: 6 }}>{sel ? `tap a tier to place “${sel}”` : “tap an item, then a tier”}</div>
+      <div style={{ display: “flex”, gap: 6, flexWrap: “wrap” }}>{pool.map((x) => <button key={x} className=”press” onClick={() => setSel(x)} style={{ ...tag, cursor: “pointer”, border: `1.5px solid ${sel === x ? C.ink : C.line}`, background: sel === x ? “var(--hs-ink)” : “var(--hs-ghost-bg)”, color: sel === x ? “var(--hs-paper)” : “var(--hs-ink)” }}>{x}</button>)}</div>
     </div>
   );
 }
@@ -222,16 +245,33 @@ function Oracle({ c, setC, mine }) {
 }
 
 /* 8 Emoji Epic */
-const ESET = "❤️ 😂 🥹 🌙 ✨ 🍜 🚗 🏠 🎁 🌊 🌸 🔥 🎶 ☕ 🐱 🐶 ✈️ 🏔️ 🌧️ ☀️ 💍 📞 🍕 🎂 🫶 👀 💤 🥂 🌹".split(" ");
+const EMOJI_CATS = {
+  "💕 Love":    ["❤️","🧡","💛","💚","💙","💜","🖤","🤍","💗","💓","💞","💘","💝","💖","🫶","💑","👫","💏","💌","💍","🌹","🫦"],
+  "😊 Feelings": ["😍","🥰","😘","😊","🥹","😂","😭","😤","😏","😎","🤩","🥺","😔","🫠","😅","😬","🤗","😴","🙈","🫣","🤭","😋","🤤"],
+  "🌸 Nature":  ["🌸","🌺","🌻","🌼","🌷","🪷","🌹","🍀","🌿","🌱","🌾","🍂","🍁","🌙","☀️","⭐","🌟","💫","✨","🌈","❄️","🌊","🌧️","⛅","🌅","🌃","🏔️","🌴","🪸"],
+  "🐾 Animals": ["🐱","🐶","🐰","🐼","🦊","🐸","🐬","🦋","🐝","🦄","🐧","🦁","🐻","🐨","🦒","🦓","🦩","🐙","🦀","🐠","🦜","🐺","🐿️","🦔","🐇","🐈","🦋","🐞"],
+  "🍕 Food":   ["🍕","🍜","🍣","🍰","🎂","🍪","🍩","🍦","🧁","🍫","🍓","🍇","🍑","🥭","🍍","🥑","🍜","🥟","🧋","☕","🥂","🍾","🍺","🥗","🍱","🍛","🍝","🫕"],
+  "✈️ Places":  ["✈️","🚗","🏠","🏖️","🏔️","🗼","🏰","🌆","🎡","🎢","🏝️","🗺️","🛸","🚀","🛶","⛵","🚢","🏕️","🌉","🎠","🏯","🕌","🗽","🎑"],
+  "🎁 Things":  ["🎁","🎮","🎵","🎶","📷","💌","📚","🎨","💎","👑","🕯️","🪄","🎭","🎬","🎤","🎸","🎹","🪗","🏆","🎯","🎲","🧩","🪬","🔮","🫧","🪞","🎀","🧸"],
+  "👋 People":  ["🫶","👏","🤝","💪","🙌","👋","🤜","✌️","🤟","🫂","💅","🧠","👁️","👄","🫀","🫁","🦷","🦴","🧬","🤲","👐","🙏"],
+};
+const [EMOJI_FIRST_CAT] = Object.keys(EMOJI_CATS);
+
 function EmojiEpic({ c, setC, mine }) {
   const e = c.emoji || { chain: [], reveal: false };
+  const [cat, setCat] = useState(EMOJI_FIRST_CAT);
   const [guess, setGuess] = useState("");
-  const addE = (em) => setC((cc) => { const ch = cc.emoji?.chain || e.chain; if (ch.length < 10) cc.emoji = { ...(cc.emoji || e), chain: [...ch, em], reveal: false }; });
+  const addE = (em) => setC((cc) => { const ch = cc.emoji?.chain || e.chain; if (ch.length < 15) cc.emoji = { ...(cc.emoji || e), chain: [...ch, em], reveal: false }; });
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, color: C.inkSoft }}><Who who={mine} /><span style={{ fontFamily: "'Caveat',cursive", fontSize: 17 }}>tell a story in emoji (max 10)</span></div>
-      <div style={{ minHeight: 54, background: C.paper, borderRadius: 12, border: `1px solid ${C.line}`, padding: 12, fontSize: 26, letterSpacing: 4, marginBottom: 10 }}>{e.chain.join("") || <span style={{ fontSize: 15, color: C.inkSoft, fontFamily: "'Caveat',cursive", letterSpacing: 0 }}>tap emojis below…</span>}</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 12 }}>{ESET.map((em, i) => <button key={i} className="press" onClick={() => addE(em)} style={{ border: `1px solid ${C.line}`, background: "#fff", borderRadius: 10, fontSize: 22, width: 38, height: 38, cursor: "pointer", lineHeight: 1 }}>{em}</button>)}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, color: C.inkSoft }}><Who who={mine} /><span style={{ fontFamily: "'Caveat',cursive", fontSize: 17 }}>tell a story in emoji (max 15)</span></div>
+      <div style={{ minHeight: 54, background: "var(--hs-paper)", borderRadius: 12, border: `1px solid ${C.line}`, padding: 12, fontSize: 26, letterSpacing: 4, marginBottom: 10 }}>{e.chain.join("") || <span style={{ fontSize: 15, color: C.inkSoft, fontFamily: "'Caveat',cursive", letterSpacing: 0 }}>tap emojis below…</span>}</div>
+      <div className="row" style={{ marginBottom: 8, paddingBottom: 6 }}>
+        {Object.keys(EMOJI_CATS).map((k) => <button key={k} className="press" onClick={() => setCat(k)} style={{ flexShrink: 0, border: `1.5px solid ${cat===k?C.rose:C.line}`, background: cat===k?C.rose:"var(--hs-ghost-bg)", color: cat===k?"#fff":C.inkSoft, borderRadius: 999, padding: "5px 11px", fontWeight: 700, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" }}>{k}</button>)}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 12 }}>
+        {EMOJI_CATS[cat].map((em, i) => <button key={i} className="press" onClick={() => addE(em)} style={{ border: `1px solid ${C.line}`, background: "var(--hs-ghost-bg)", borderRadius: 10, fontSize: 22, width: 40, height: 40, cursor: "pointer", lineHeight: 1 }}>{em}</button>)}
+      </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <button className="press" onClick={() => setC((cc) => { cc.emoji = { ...(cc.emoji || e), chain: (cc.emoji?.chain || e.chain).slice(0, -1) }; })} style={{ ...ghost, flex: 1 }}>undo</button>
         <button className="press" onClick={() => setC((cc) => { cc.emoji = { chain: [], reveal: false }; })} style={{ ...ghost, flex: 1 }}>clear</button>

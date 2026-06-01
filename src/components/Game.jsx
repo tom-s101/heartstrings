@@ -102,7 +102,7 @@ export function Game({ session, user, onLeave, onSignOut }) {
       {/* Exit confirmation modal */}
       {exitModal && (
         <div onClick={() => setExitModal(null)} style={{ position: "fixed", inset: 0, zIndex: 30, background: "rgba(60,50,40,.5)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <div className="pop" onClick={(e) => e.stopPropagation()} style={{ background: C.cream, borderRadius: 24, padding: "28px 26px", maxWidth: 360, width: "100%", textAlign: "center", boxShadow: "0 32px 60px -20px rgba(0,0,0,.35)" }}>
+          <div className="pop" onClick={(e) => e.stopPropagation()} style={{ background: "var(--hs-card-bg)", backdropFilter: "blur(8px)", borderRadius: 24, padding: "28px 26px", maxWidth: 360, width: "100%", textAlign: "center", boxShadow: "0 32px 60px -20px rgba(0,0,0,.35)", border: "1px solid var(--hs-card-border)" }}>
             <div style={{ display: "inline-flex", marginBottom: 10 }}>
               <Icon name={exitModal === "leave" ? "close" : "arrow"} size={32} color={C.roseDeep} style={exitModal === "signout" ? { transform: "rotate(180deg)" } : {}} />
             </div>
@@ -115,7 +115,7 @@ export function Game({ session, user, onLeave, onSignOut }) {
                 : "You'll be signed out completely. Your room and progress are saved."}
             </p>
             <div style={{ display: "flex", gap: 10 }}>
-              <button className="press" onClick={() => setExitModal(null)} style={{ flex: 1, border: `1.5px solid ${C.line}`, background: "#fff", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, cursor: "pointer", color: C.ink }}>
+              <button className="press" onClick={() => setExitModal(null)} style={{ flex: 1, border: "1.5px solid var(--hs-line)", background: "var(--hs-ghost-bg)", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, cursor: "pointer", color: "var(--hs-ink)" }}>
                 Stay
               </button>
               <button className="press" onClick={() => { setExitModal(null); exitModal === "leave" ? onLeave() : onSignOut(); }}
@@ -138,54 +138,62 @@ export function Game({ session, user, onLeave, onSignOut }) {
 }
 
 function Presence({ partnerOnline, status }) {
-  const dot = (c, lit) => <span style={{ width: 9, height: 9, borderRadius: 999, background: lit ? c : "rgba(0,0,0,.15)", boxShadow: lit ? `0 0 0 3px ${c}33` : "none", display: "inline-block" }} />;
+  const dot = (c, lit) => <span style={{ width: 9, height: 9, borderRadius: 999, background: lit ? c : "rgba(128,128,128,.3)", boxShadow: lit ? `0 0 0 3px ${c}33` : "none", display: "inline-block" }} />;
   const live = status === "live";
   const txt = status === "connecting" ? "connecting…" : status === "reconnecting" ? "reconnecting…" : partnerOnline ? "both here" : "waiting…";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 7, background: "rgba(255,255,255,.7)", borderRadius: 999, padding: "6px 11px", border: `1px solid ${C.line}` }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 7, background: "var(--hs-chip-bg)", borderRadius: 999, padding: "6px 11px", border: "1px solid var(--hs-line)" }}>
       {dot(C.blue, live)}{dot(C.rose, live && partnerOnline)}
-      <span style={{ fontSize: 11.5, fontWeight: 800, color: !live ? C.gold : partnerOnline ? C.sageDeep : C.inkSoft }}>{txt}</span>
+      <span style={{ fontSize: 11.5, fontWeight: 800, color: !live ? C.gold : partnerOnline ? C.sageDeep : "var(--hs-inkSoft)" }}>{txt}</span>
     </div>
   );
 }
 function Tab({ active, onClick, icon, label }) {
   return (
-    <button className="press" onClick={onClick} style={{ border: "none", cursor: "pointer", padding: "11px 13px", borderRadius: "16px 16px 0 0", fontWeight: 800, fontSize: 14, color: active ? C.ink : C.inkSoft, background: active ? "rgba(255,255,255,.9)" : "rgba(255,255,255,.4)", boxShadow: active ? "0 -3px 12px -7px rgba(0,0,0,.3)" : "none", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-      <Icon name={icon} size={17} color={active ? C.ink : C.inkSoft} /><span className="tab-label">{label}</span>
+    <button className="press" onClick={onClick} style={{ border: "none", cursor: "pointer", padding: "11px 13px", borderRadius: "16px 16px 0 0", fontWeight: 800, fontSize: 14, color: active ? "var(--hs-ink)" : "var(--hs-inkSoft)", background: active ? "var(--hs-card-bg)" : "var(--hs-chip-bg)", boxShadow: active ? "0 -3px 12px -7px rgba(0,0,0,.3)" : "none", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+      <Icon name={icon} size={17} color={active ? "var(--hs-ink)" : "var(--hs-inkSoft)"} /><span className="tab-label">{label}</span>
     </button>
   );
 }
 function IconChip({ active, onClick, color, icon }) {
   return (
-    <button className="press" onClick={onClick} style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: `1.5px solid ${active ? color : C.line}`, background: active ? color : "rgba(255,255,255,.7)" }}>
-      <Icon name={icon} size={19} color={active ? "#fff" : C.inkSoft} />
+    <button className="press" onClick={onClick} style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: `1.5px solid ${active ? color : "var(--hs-line)"}`, background: active ? color : "var(--hs-chip-bg)" }}>
+      <Icon name={icon} size={19} color={active ? "#fff" : "var(--hs-inkSoft)"} />
     </button>
   );
 }
 function ExitMenu({ onLeave, onSignOut }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const [menuPos, setMenuPos] = useState({ top: 60, right: 16 });
+  const btnRef = useRef(null);
   useEffect(() => {
     if (!open) return;
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handler); document.addEventListener("touchstart", handler);
-    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("touchstart", handler); };
+    const close = (e) => { if (!e.target.closest("[data-exitmenu]")) setOpen(false); };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
   }, [open]);
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setMenuPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
+    }
+    setOpen(v => !v);
+  };
   return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button className="press" onClick={() => setOpen((v) => !v)} style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: `1.5px solid ${C.line}`, background: "rgba(255,255,255,.7)" }}>
+    <div data-exitmenu style={{ position: "relative" }}>
+      <button ref={btnRef} className="press" onClick={toggle} style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid var(--hs-line)", background: "var(--hs-chip-bg)" }}>
         <span style={{ display: "flex", flexDirection: "column", gap: 3.5, alignItems: "center", justifyContent: "center" }}>
-          {[0,1,2].map((i) => <span key={i} style={{ width: 4, height: 4, borderRadius: 999, background: C.inkSoft, display: "block" }} />)}
+          {[0,1,2].map((i) => <span key={i} style={{ width: 4, height: 4, borderRadius: 999, background: "var(--hs-inkSoft)", display: "block" }} />)}
         </span>
       </button>
       {open && (
-        <div className="pop" style={{ position: "absolute", right: 0, top: 44, background: "#fff", borderRadius: 16, boxShadow: "0 16px 40px -12px rgba(0,0,0,.25)", border: `1px solid ${C.line}`, overflow: "hidden", zIndex: 10, minWidth: 160 }}>
+        <div data-exitmenu className="pop" style={{ position: "fixed", right: menuPos.right, top: menuPos.top, background: "var(--hs-card-bg)", borderRadius: 16, boxShadow: "0 16px 40px -12px rgba(0,0,0,.35)", border: "1px solid var(--hs-card-border)", backdropFilter: "blur(8px)", overflow: "hidden", zIndex: 100, minWidth: 170 }}>
           <button className="press" onClick={() => { setOpen(false); onLeave(); }}
-            style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "13px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.ink, borderBottom: `1px solid ${C.line}` }}>
-            <Icon name="close" size={16} color={C.inkSoft} /> Leave room
+            style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "var(--hs-ink)", borderBottom: "1px solid var(--hs-line)" }}>
+            <Icon name="close" size={16} color="var(--hs-inkSoft)" /> Leave room
           </button>
           <button className="press" onClick={() => { setOpen(false); onSignOut(); }}
-            style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "13px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.roseDeep }}>
+            style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.roseDeep }}>
             <Icon name="arrow" size={16} color={C.roseDeep} style={{ transform: "rotate(180deg)" }} /> Sign out
           </button>
         </div>

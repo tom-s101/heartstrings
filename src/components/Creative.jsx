@@ -95,7 +95,7 @@ function Melody({ c, setC, mine }) {
         {songs.map((s, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, background: C.paper, borderRadius: 12, padding: "10px 12px", border: `1px solid ${C.line}` }}>
             <span style={{ fontFamily: "'Fraunces',serif", color: C.inkSoft, fontSize: 13, width: 16 }}>{i + 1}</span>
-            <div style={{ flex: 1, minWidth: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}><Who who={s.who} /> {s.title}</div>{s.why && <div style={{ fontFamily: "'Caveat',cursive", fontSize: 16, color: C.inkSoft }}>“{s.why}”</div>}</div>
+            <div style={{ flex: 1, minWidth: 0 }}><div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700 }}><Who who={s.who} /> {s.title}</div>{s.why && <div style={{ fontFamily: "'Caveat',cursive", fontSize: 16, color: C.inkSoft }}>"{s.why}"</div>}</div>
             <button className="press" onClick={() => move(i, -1)} style={mini}><Icon name="up" size={15} color={C.inkSoft} /></button>
             <button className="press" onClick={() => move(i, 1)} style={mini}><Icon name="down" size={15} color={C.inkSoft} /></button>
           </div>
@@ -109,12 +109,12 @@ function Melody({ c, setC, mine }) {
 }
 
 /* 3 Tier List */
-const TIER_PRESETS = { “Date ideas”: [“picnic”, “movie night”, “road trip”, “cooking in”, “stargazing”, “museum”, “beach day”, “arcade”], “Snacks”: [“popcorn”, “ice cream”, “fries”, “sushi”, “chocolate”, “mango”, “ramen”, “tacos”], “Future pets”: [“golden pup”, “fat cat”, “bunny”, “parrot”, “corgi”, “turtle”] };
-const TIERS = [“S”, “A”, “B”, “C”]; const TIER_C = { S: C.rose, A: C.gold, B: C.sage, C: C.blue };
+const TIER_PRESETS = { "Date ideas": ["picnic", "movie night", "road trip", "cooking in", "stargazing", "museum", "beach day", "arcade"], "Snacks": ["popcorn", "ice cream", "fries", "sushi", "chocolate", "mango", "ramen", "tacos"], "Future pets": ["golden pup", "fat cat", "bunny", "parrot", "corgi", "turtle"] };
+const TIERS = ["S", "A", "B", "C"]; const TIER_C = { S: C.rose, A: C.gold, B: C.sage, C: C.blue };
 function Tier({ c, setC, ai }) {
-  const t = c.tier || { cat: “Date ideas”, items: TIER_PRESETS[“Date ideas”], board: {} };
+  const t = c.tier || { cat: "Date ideas", items: TIER_PRESETS["Date ideas"], board: {} };
   const [sel, setSel] = useState(null);
-  const [custom, setCustom] = useState(“”);
+  const [custom, setCustom] = useState("");
   const [genBusy, setGenBusy] = useState(false);
   const placed = Object.values(t.board).flat();
   const pool = (t.items || TIER_PRESETS[t.cat] || []).filter((x) => !placed.includes(x));
@@ -123,36 +123,36 @@ function Tier({ c, setC, ai }) {
   const generateItems = async () => {
     if (!custom.trim()) return;
     setGenBusy(true);
-    const res = await ai(`Generate exactly 12 short, fun items (2-4 words each) for a tier list about: “${custom.trim()}”. Return ONLY a JSON array of strings, nothing else. Example: [“item one”,”item two”,...]`);
+    const res = await ai(`Generate exactly 12 short, fun items (2-4 words each) for a tier list about: "${custom.trim()}". Return ONLY a JSON array of strings, nothing else. Example: ["item one","item two",...]`);
     setGenBusy(false);
     if (res) {
       try {
-        const items = JSON.parse(res.match(/\[.*\]/s)?.[0] || “[]”);
-        if (items.length) { setSel(null); setC((cc) => { cc.tier = { cat: custom.trim(), items, board: {} }; }); setCustom(“”); }
+        const items = JSON.parse(res.match(/\[.*\]/s)?.[0] || "[]");
+        if (items.length) { setSel(null); setC((cc) => { cc.tier = { cat: custom.trim(), items, board: {} }; }); setCustom(""); }
       } catch {}
     }
   };
   return (
     <div>
-      <div style={{ display: “flex”, gap: 6, flexWrap: “wrap”, marginBottom: 10, justifyContent: “center” }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, justifyContent: "center" }}>
         {Object.keys(TIER_PRESETS).map((k) => <Pill key={k} active={t.cat === k} onClick={() => pickPreset(k)}>{k}</Pill>)}
       </div>
-      <div style={{ display: “flex”, gap: 8, marginBottom: 14 }}>
-        <input value={custom} onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => e.key === “Enter” && generateItems()} placeholder=”custom category… e.g. Studio Ghibli movies” style={{ ...inp, flex: 1, marginBottom: 0 }} />
-        <button className=”press” onClick={generateItems} disabled={!custom.trim() || genBusy} style={{ ...btn(grad), padding: “0 14px”, opacity: genBusy ? .6 : 1, flexShrink: 0 }}>
-          {genBusy ? “…” : <><span style={{ fontSize: 16 }}>✦</span> generate</>}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <input value={custom} onChange={(e) => setCustom(e.target.value)} onKeyDown={(e) => e.key === "Enter" && generateItems()} placeholder="custom category… e.g. Studio Ghibli movies" style={{ ...inp, flex: 1, marginBottom: 0 }} />
+        <button className="press" onClick={generateItems} disabled={!custom.trim() || genBusy} style={{ ...btn(grad), padding: "0 14px", opacity: genBusy ? .6 : 1, flexShrink: 0 }}>
+          {genBusy ? "…" : <><span style={{ fontSize: 16 }}>✦</span> generate</>}
         </button>
       </div>
-      <div style={{ display: “flex”, flexDirection: “column”, gap: 6, marginBottom: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
         {TIERS.map((tier) => (
-          <div key={tier} onClick={() => place(tier)} style={{ display: “flex”, alignItems: “center”, gap: 8, minHeight: 44, borderRadius: 12, padding: “6px 8px”, background: “var(--hs-paper)”, border: `1.5px solid ${sel ? TIER_C[tier] : C.line}`, cursor: sel ? “pointer” : “default” }}>
-            <span style={{ width: 30, height: 30, borderRadius: 8, background: TIER_C[tier], color: “#fff”, display: “flex”, alignItems: “center”, justifyContent: “center”, fontWeight: 800, fontFamily: “'Fraunces',serif”, flexShrink: 0 }}>{tier}</span>
-            <div style={{ display: “flex”, gap: 6, flexWrap: “wrap” }}>{(t.board[tier] || []).map((x) => <span key={x} style={tag}>{x}</span>)}</div>
+          <div key={tier} onClick={() => place(tier)} style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44, borderRadius: 12, padding: "6px 8px", background: "var(--hs-paper)", border: `1.5px solid ${sel ? TIER_C[tier] : C.line}`, cursor: sel ? "pointer" : "default" }}>
+            <span style={{ width: 30, height: 30, borderRadius: 8, background: TIER_C[tier], color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontFamily: "'Fraunces',serif", flexShrink: 0 }}>{tier}</span>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{(t.board[tier] || []).map((x) => <span key={x} style={tag}>{x}</span>)}</div>
           </div>
         ))}
       </div>
-      <div style={{ fontFamily: “'Caveat',cursive”, fontSize: 17, color: C.inkSoft, marginBottom: 6 }}>{sel ? `tap a tier to place “${sel}”` : “tap an item, then a tier”}</div>
-      <div style={{ display: “flex”, gap: 6, flexWrap: “wrap” }}>{pool.map((x) => <button key={x} className=”press” onClick={() => setSel(x)} style={{ ...tag, cursor: “pointer”, border: `1.5px solid ${sel === x ? C.ink : C.line}`, background: sel === x ? “var(--hs-ink)” : “var(--hs-ghost-bg)”, color: sel === x ? “var(--hs-paper)” : “var(--hs-ink)” }}>{x}</button>)}</div>
+      <div style={{ fontFamily: "'Caveat',cursive", fontSize: 17, color: C.inkSoft, marginBottom: 6 }}>{sel ? `tap a tier to place "${sel}"` : "tap an item, then a tier"}</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{pool.map((x) => <button key={x} className="press" onClick={() => setSel(x)} style={{ ...tag, cursor: "pointer", border: `1.5px solid ${sel === x ? C.ink : C.line}`, background: sel === x ? "var(--hs-ink)" : "var(--hs-ghost-bg)", color: sel === x ? "var(--hs-paper)" : "var(--hs-ink)" }}>{x}</button>)}</div>
     </div>
   );
 }
@@ -185,7 +185,7 @@ function Mosaic({ c, setC, mine }) {
   return (
     <div>
       <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>{MPR.map((p) => <Pill key={p} active={prompt === p} onClick={() => setPrompt(p)}>{p}</Pill>)}</div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}><input value={cap} onChange={(e) => setCap(e.target.value)} placeholder={`caption “${prompt}”…`} style={inp} /><button className="press" onClick={add} style={btn(grad)}><Icon name="plus" size={16} color="#fff" /></button></div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}><input value={cap} onChange={(e) => setCap(e.target.value)} placeholder={`caption "${prompt}"…`} style={inp} /><button className="press" onClick={add} style={btn(grad)}><Icon name="plus" size={16} color="#fff" /></button></div>
       <div style={{ borderLeft: `2px solid ${C.line}`, marginLeft: 8, paddingLeft: 14, display: "flex", flexDirection: "column", gap: 14 }}>
         {entries.map((e, i) => (
           <div key={i} style={{ position: "relative" }}>
@@ -236,7 +236,7 @@ function Oracle({ c, setC, mine }) {
         </div>
       </div>
       {o.card && (<>
-        <textarea value={meaning} onChange={(e) => setMeaning(e.target.value)} placeholder={`what does “${o.card}” say about us?`} rows={2} style={{ ...inp, resize: "vertical", marginBottom: 10 }} />
+        <textarea value={meaning} onChange={(e) => setMeaning(e.target.value)} placeholder={`what does "${o.card}" say about us?`} rows={2} style={{ ...inp, resize: "vertical", marginBottom: 10 }} />
         <button className="press" onClick={save} style={{ ...btn(grad), width: "100%" }}><Icon name="check" size={16} color="#fff" /> save to our oracle journal</button>
       </>)}
       {(o.journal || []).length > 0 && <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>{o.journal.map((j, i) => <div key={i} style={{ background: C.paper, borderRadius: 12, padding: 10, border: `1px solid ${C.line}` }}><div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: 13, color: C.gold }}><Who who={j.who} /> {j.card}</div><div style={{ fontFamily: "'Fraunces',serif", fontSize: 15 }}>{j.meaning}</div></div>)}</div>}

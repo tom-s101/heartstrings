@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useRoom } from "../hooks/useRoom";
-import { C, Icon, Mark, DarkToggle } from "../ui";
+import { C, Icon, Mark, ThemePicker, useTheme } from "../ui";
 
 const MODES = {
   chill:      { icon: "leaf",   label: "Chill Mode",      desc: "No pressure — just enjoy each other ✶" },
@@ -22,6 +22,14 @@ export function Game({ session, user, onLeave, onSignOut }) {
   const [exitModal, setExitModal] = useState(null); // "leave" | "signout" | null
   const toastTimer = useRef(null);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  // Sync room theme → local theme so both users stay in sync
+  const { setTheme, theme } = useTheme();
+  useEffect(() => {
+    const roomTheme = state.c?._theme || "default";
+    if (roomTheme !== theme) setTheme(roomTheme);
+  }, [state.c?._theme]); // eslint-disable-line
+
   const mine = session.side;
   const meColor = mine === "him" ? C.blue : C.rose;
   const other = mine === "him" ? "her" : "him";
@@ -87,7 +95,7 @@ export function Game({ session, user, onLeave, onSignOut }) {
               <IconChip key={id} active={state.feel === id} onClick={() => activateMode(id)} color={meColor} icon={ic} />
             ))}
           </div>
-          <DarkToggle />
+          <ThemePicker onPick={(t) => room.commit((s) => { s.c._theme = t; return s; })} />
           <ExitMenu onLeave={() => setExitModal("leave")} onSignOut={() => setExitModal("signout")} />
         </div>
       </header>

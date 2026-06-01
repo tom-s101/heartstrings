@@ -19,7 +19,7 @@ function blankState() {
     d: { sub: "same", prompt: "our dream date", revealed: false, duration: 60, endsAt: null,
          round: 1, artist: "him" },
     score: { him: 0, her: 0 },
-    c: { tool: "story" },
+    c: { tool: "story", _theme: "default" },
     players: { him: { lastSeen: 0 }, her: { lastSeen: 0 } },
   };
 }

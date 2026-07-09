@@ -75,3 +75,75 @@ src/
 ### Sync notes for the new sections
 - Drawing studio reuses the existing stroke broadcast + `d_state`. Chain games persist each step into `d_state.chain` on "pass" (turn-based, so both partners take turns rather than drawing at once).
 - Creative tools store their data under `room_state.c_state`; discrete actions (add line, place item, draw card) commit immediately, while free-text fields (Letter body, dish name) commit on blur to avoid write spam.
+
+## Reliability fixes (after real-world testing)
+- **Crash-to-blank-screen fixed.** The app had no error boundary, so any bad
+  data in a room's saved state (e.g. a malformed AI reply that got stored)
+  would throw during render and unmount the entire app to a blank white
+  screen — and since the bad data lived in that room's row, reopening it hit
+  the same crash every time. Each tab (Questions/Drawing/Creative/Gallery) is
+  now wrapped in its own error boundary (`ErrorBoundary.jsx`): if something
+  still manages to throw, only that tab shows a "Reset this section" card
+  instead of the whole app going blank — the other tabs, your account, and
+  the room keep working.
+- **`applyRow` (the DB → UI merge) is now defensive.** Wrong-typed or missing
+  nested fields (`picks`, `round`, `chain`, `score`) are replaced with safe
+  defaults instead of passed straight into state, closing off the most likely
+  source of the crash at the root.
+- **`supabase/maintenance/reset_room.sql`** — a one-time emergency script to
+  reset any already-crashed room's live state by hand from the SQL editor,
+  for right now, without needing the code fixes deployed first.
+- **Red/Green Flag was heavily biased toward green.** Nothing told the model
+  which to generate, so it defaulted to pleasant traits almost every time.
+  The server now forces a genuine 50/50 coin-flip per round and explicitly
+  instructs the model which kind to write — and reveals which one it was
+  after you both answer.
+- **Occasional garbled card text fixed.** A model reply with stray
+  labels/formatting around the JSON could previously end up rendered
+  verbatim (e.g. `Red flags :{...`). Replies are now JSON-extracted and
+  shape-validated before ever reaching the client; an invalid reply triggers
+  one silent retry, and if a bad round still somehow gets displayed, the
+  client itself recognizes stray `{}[]` characters and shows a friendly
+  "that came out glitchy — try a fresh one" prompt instead of the raw text.
+
+## Three new Game modes
+- **Love Language Check** — a small scenario with 4 options, each a natural
+  way to show love in the moment; tap the one that resonates and see if you
+  match.
+- **Two Truths & a Fib** — three fun trivia statements about love/romance/
+  animal courtship, one is false; guess the fib and get a one-line reveal.
+- **Compatibility Meter** — a 0–100 slider each of you sets privately, then
+  reveal shows both numbers and a cute gap message ("practically the same
+  soul" / "wonderfully different").
+
+## The three-experience rework
+The app now opens to a **Landing hub** after login, with three ways in:
+
+1. **Long Distance** — the original Heartstrings: synced rooms, sides, live
+   games/questions/drawing/creative across two devices.
+2. **Photo Booth** (`PhotoBooth.jsx` + migration `0004_booth.sql`) —
+   • *One device*: customize the strip (layout 3/4, four frames, four mood
+   filters, caption, date stamp) → countdown shots on the device camera →
+   composed strip with a save/download button.
+   • *Create a room / Join with a code*: one partner gets an auto 6-letter
+   code; the other joins with it. The countdown is broadcast-synced so both
+   devices shoot at the same moment, each side's photos upload to the new
+   `booth_photos` table, and BOTH devices can save a combined two-column
+   his+hers strip. Booth rooms reuse `join_room` (the code doubles as the
+   room's secret), so membership + RLS apply unchanged.
+3. **Together** — the same games adapted for one shared device: the join
+   screen asks for the room + code (history and gallery still persist) plus
+   both first names. In-game: no presence pill or "waiting…" states, names
+   replace his/her everywhere, both answer columns are tappable on the one
+   screen, the Compatibility Meter becomes pass-the-phone (one locks in while
+   the other looks away), Drawing becomes "Doodle together" (one canvas, a
+   whose-pen toggle keeps the gallery's his|hers split meaningful) and
+   "Guess my sketch" (hold-to-peek Pictionary), and Creative gets a
+   "who's adding?" toggle.
+
+### Deploy notes for this rework
+- Run migration `0004_booth.sql` (Photo Booth needs it).
+- Frontend redeploy (push to GitHub → Netlify rebuild).
+- No edge-function changes in this round.
+- The booth needs camera permission; on iOS it must be served over HTTPS
+  (Netlify is, so only local testing over plain http may block the camera).

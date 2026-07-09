@@ -1,46 +1,24 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useRoom } from "../hooks/useRoom";
-import { C, Icon, Mark, ThemePicker, useTheme } from "../ui";
-
-const MODES = {
-  chill:      { icon: "leaf",   label: "Chill Mode",      desc: "No pressure — just enjoy each other ✶" },
-  structured: { icon: "timer",  label: "Structured Mode", desc: "Timed answers to keep things moving ⏱" },
-  gamenight:  { icon: "trophy", label: "Game Night",      desc: "Scoring is on — may the best one win 🏆" },
-};
+import { C, Icon, Mark } from "../ui";
 import { Questions } from "./Questions";
 import { Drawing } from "./Drawing";
 import { Creative } from "./Creative";
 import { Gallery } from "./Gallery";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 const ONLINE_WINDOW = 12000;
 
-export function Game({ session, user, onLeave, onSignOut }) {
-  const room = useRoom(session.room, session.code, session.side, user, session.name);
+export function Game({ session, user, onLeave }) {
+  const room = useRoom(session.room, session.code, session.side, user);
   const { state, status, error } = room;
   const [tab, setTab] = useState("questions");
-  const [toast, setToast] = useState(null);
-  const [exitModal, setExitModal] = useState(null); // "leave" | "signout" | null
-  const toastTimer = useRef(null);
-  useEffect(() => () => clearTimeout(toastTimer.current), []);
-
-  // Sync room theme → local theme so both users stay in sync
-  const { setTheme, theme } = useTheme();
-  useEffect(() => {
-    const roomTheme = state.c?._theme || "default";
-    if (roomTheme !== theme) setTheme(roomTheme);
-  }, [state.c?._theme]); // eslint-disable-line
-
   const mine = session.side;
+  const local = !!session.local;
+  const names = session.names || null; // { him, her } in together mode
   const meColor = mine === "him" ? C.blue : C.rose;
   const other = mine === "him" ? "her" : "him";
-  const partnerOnline = (state.players?.[other]?.lastSeen || 0) > Date.now() - ONLINE_WINDOW;
-
-  const activateMode = (id) => {
-    room.commit((s) => { s.feel = id; return s; });
-    clearTimeout(toastTimer.current);
-    setToast(id);
-    toastTimer.current = setTimeout(() => setToast(null), 2800);
-  };
+  const partnerOnline = local || (state.players?.[other]?.lastSeen || 0) > Date.now() - ONLINE_WINDOW;
 
   if (error) {
     const m = /code/i.test(error) ? { t: "That code doesn't match", s: "Double-check the secret code with your partner — it has to be identical on both sides." }
@@ -63,149 +41,101 @@ export function Game({ session, user, onLeave, onSignOut }) {
           <Icon name="refresh" size={15} color="#fff" /> reconnecting…
         </div>
       )}
-      {toast && (
-        <div key={toast} style={{ background: "rgba(255,255,255,.96)", borderBottom: `3px solid ${meColor}`, textAlign: "center", padding: "10px 18px", display: "flex", alignItems: "center", justifyContent: "center", gap: 9, animation: "fin .35s ease both", boxShadow: "0 4px 18px -8px rgba(0,0,0,.18)" }}>
-          <Icon name={MODES[toast].icon} size={20} color={meColor} />
-          <span style={{ fontFamily: "'Fraunces',serif", fontWeight: 600, fontSize: 15.5, color: C.ink }}>{MODES[toast].label}</span>
-          <span style={{ color: C.inkSoft, fontSize: 14 }}>— {MODES[toast].desc}</span>
-        </div>
-      )}
       <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Mark size={18} />
           <div>
             <div style={{ fontFamily: "'Fraunces', serif", fontWeight: 600, fontSize: 16, lineHeight: 1 }}>{session.room}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3 }}>
-              <Icon name={mine === "him" ? "wave" : "lotus"} size={14} color={meColor} />
-              <span style={{ fontFamily: "'Caveat', cursive", color: C.inkSoft, fontSize: 15 }}>{session.name} · the {mine === "him" ? "blue" : "lotus"} one</span>
+              {local ? (
+                <>
+                  <Icon name="couch" size={14} color={C.rose} />
+                  <span style={{ fontFamily: "'Caveat', cursive", color: C.inkSoft, fontSize: 15 }}>{names?.him} & {names?.her} · together</span>
+                </>
+              ) : (
+                <>
+                  <Icon name={mine === "him" ? "wave" : "lotus"} size={14} color={meColor} />
+                  <span style={{ fontFamily: "'Caveat', cursive", color: C.inkSoft, fontSize: 15 }}>you're the {mine === "him" ? "blue" : "rose"} one</span>
+                </>
+              )}
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap", minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {state.feel === "gamenight" && (
-            <div style={{ display: "flex", alignItems: "center", gap: 4, background: "var(--hs-chip-bg)", borderRadius: 999, padding: "4px 8px", border: "1px solid var(--hs-line)", flexShrink: 0 }}>
-              <Icon name="wave" size={12} color={C.blue} /><b style={{ fontSize: 12, color: C.blueDeep }}>{state.score?.him || 0}</b>
-              <span style={{ color: "var(--hs-inkSoft)", fontSize: 11 }}>–</span>
-              <b style={{ fontSize: 12, color: C.roseDeep }}>{state.score?.her || 0}</b><Icon name="lotus" size={12} color={C.rose} />
+            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,.7)", borderRadius: 999, padding: "5px 11px", border: `1px solid ${C.line}` }}>
+              <Icon name="wave" size={14} color={C.blue} /><b style={{ fontSize: 13, color: C.blueDeep }}>{state.score?.him || 0}</b>
+              <span style={{ color: C.inkSoft }}>–</span>
+              <b style={{ fontSize: 13, color: C.roseDeep }}>{state.score?.her || 0}</b><Icon name="lotus" size={14} color={C.rose} />
             </div>
           )}
-          <Presence partnerOnline={partnerOnline} status={status} />
-          <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+          {!local && <Presence partnerOnline={partnerOnline} status={status} />}
+          <div style={{ display: "flex", gap: 6 }}>
             {[["chill", "leaf"], ["structured", "timer"], ["gamenight", "trophy"]].map(([id, ic]) => (
-              <IconChip key={id} active={state.feel === id} onClick={() => activateMode(id)} color={meColor} icon={ic} />
+              <IconChip key={id} active={state.feel === id} onClick={() => room.commit((s) => { s.feel = id; return s; })} color={meColor} icon={ic} />
             ))}
           </div>
-          <ThemePicker onPick={(t) => room.commit((s) => { s.c._theme = t; return s; })} />
-          <ExitMenu onLeave={() => setExitModal("leave")} onSignOut={() => setExitModal("signout")} />
         </div>
       </header>
 
-      <nav style={{ display: "flex", gap: 8, padding: "0 18px", maxWidth: 820, margin: "0 auto", width: "100%", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <nav style={{ display: "flex", gap: 8, padding: "0 18px", maxWidth: 820, margin: "0 auto", width: "100%" }}>
         <Tab active={tab === "questions"} onClick={() => setTab("questions")} icon="chat" label="Questions" />
         <Tab active={tab === "drawing"} onClick={() => setTab("drawing")} icon="brush" label="Drawing" />
         <Tab active={tab === "creative"} onClick={() => setTab("creative")} icon="pen" label="Creative" />
         <Tab active={tab === "gallery"} onClick={() => setTab("gallery")} icon="frame" label="Gallery" />
+        <button className="press" onClick={onLeave} style={{ marginLeft: "auto", border: "none", background: "transparent", color: C.inkSoft, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+          <Icon name="close" size={14} color={C.inkSoft} /> leave
+        </button>
       </nav>
 
-      {/* Exit confirmation modal */}
-      {exitModal && (
-        <div onClick={() => setExitModal(null)} style={{ position: "fixed", inset: 0, zIndex: 30, background: "rgba(60,50,40,.5)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <div className="pop" onClick={(e) => e.stopPropagation()} style={{ background: "var(--hs-card-bg)", backdropFilter: "blur(8px)", borderRadius: 24, padding: "28px 26px", maxWidth: 360, width: "100%", textAlign: "center", boxShadow: "0 32px 60px -20px rgba(0,0,0,.35)", border: "1px solid var(--hs-card-border)" }}>
-            <div style={{ display: "inline-flex", marginBottom: 10 }}>
-              <Icon name={exitModal === "leave" ? "close" : "arrow"} size={32} color={C.roseDeep} style={exitModal === "signout" ? { transform: "rotate(180deg)" } : {}} />
-            </div>
-            <h2 style={{ fontFamily: "'Fraunces',serif", margin: "0 0 8px", fontSize: 24 }}>
-              {exitModal === "leave" ? "Leave the room?" : "Sign out?"}
-            </h2>
-            <p style={{ color: C.inkSoft, fontSize: 14, margin: "0 0 22px", lineHeight: 1.5 }}>
-              {exitModal === "leave"
-                ? "You can always come back — just use the same room name and code."
-                : "You'll be signed out completely. Your room and progress are saved."}
-            </p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button className="press" onClick={() => setExitModal(null)} style={{ flex: 1, border: "1.5px solid var(--hs-line)", background: "var(--hs-ghost-bg)", borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, cursor: "pointer", color: "var(--hs-ink)" }}>
-                Stay
-              </button>
-              <button className="press" onClick={() => { setExitModal(null); exitModal === "leave" ? onLeave() : onSignOut(); }}
-                style={{ flex: 1, border: "none", background: `linear-gradient(90deg, ${C.roseDeep}, ${C.blueDeep})`, borderRadius: 14, padding: "13px", fontWeight: 800, fontSize: 14, cursor: "pointer", color: "#fff" }}>
-                {exitModal === "leave" ? "Yes, leave" : "Yes, sign out"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <main style={{ maxWidth: 820, margin: "0 auto", padding: "18px 18px 48px", width: "100%" }}>
-        {tab === "questions" && <Questions room={room} mine={mine} names={state.players} />}
-        {tab === "drawing" && <Drawing room={room} mine={mine} partnerOnline={partnerOnline} />}
-        {tab === "creative" && <Creative room={room} mine={mine} />}
-        {tab === "gallery" && <Gallery roomId={room.roomId} />}
+        {tab === "questions" && (
+          <ErrorBoundary onReset={() => room.resetSection("q")}>
+            <Questions room={room} mine={mine} local={local} names={names} />
+          </ErrorBoundary>
+        )}
+        {tab === "drawing" && (
+          <ErrorBoundary onReset={() => room.resetSection("d")}>
+            <Drawing room={room} mine={mine} partnerOnline={partnerOnline} local={local} names={names} />
+          </ErrorBoundary>
+        )}
+        {tab === "creative" && (
+          <ErrorBoundary onReset={() => room.resetSection("c")}>
+            <Creative room={room} mine={mine} local={local} names={names} />
+          </ErrorBoundary>
+        )}
+        {tab === "gallery" && (
+          <ErrorBoundary onReset={() => Promise.resolve()}>
+            <Gallery roomId={room.roomId} />
+          </ErrorBoundary>
+        )}
       </main>
     </div>
   );
 }
 
 function Presence({ partnerOnline, status }) {
-  const dot = (c, lit) => <span style={{ width: 9, height: 9, borderRadius: 999, background: lit ? c : "rgba(128,128,128,.3)", boxShadow: lit ? `0 0 0 3px ${c}33` : "none", display: "inline-block" }} />;
+  const dot = (c, lit) => <span style={{ width: 9, height: 9, borderRadius: 999, background: lit ? c : "rgba(0,0,0,.15)", boxShadow: lit ? `0 0 0 3px ${c}33` : "none", display: "inline-block" }} />;
   const live = status === "live";
   const txt = status === "connecting" ? "connecting…" : status === "reconnecting" ? "reconnecting…" : partnerOnline ? "both here" : "waiting…";
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 7, background: "var(--hs-chip-bg)", borderRadius: 999, padding: "6px 11px", border: "1px solid var(--hs-line)" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 7, background: "rgba(255,255,255,.7)", borderRadius: 999, padding: "6px 11px", border: `1px solid ${C.line}` }}>
       {dot(C.blue, live)}{dot(C.rose, live && partnerOnline)}
-      <span style={{ fontSize: 11.5, fontWeight: 800, color: !live ? C.gold : partnerOnline ? C.sageDeep : "var(--hs-inkSoft)" }}>{txt}</span>
+      <span style={{ fontSize: 11.5, fontWeight: 800, color: !live ? C.gold : partnerOnline ? C.sageDeep : C.inkSoft }}>{txt}</span>
     </div>
   );
 }
 function Tab({ active, onClick, icon, label }) {
   return (
-    <button className="press" onClick={onClick} style={{ border: "none", cursor: "pointer", padding: "11px 13px", borderRadius: "16px 16px 0 0", fontWeight: 800, fontSize: 14, color: active ? "var(--hs-ink)" : "var(--hs-inkSoft)", background: active ? "var(--hs-card-bg)" : "var(--hs-chip-bg)", boxShadow: active ? "0 -3px 12px -7px rgba(0,0,0,.3)" : "none", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-      <Icon name={icon} size={17} color={active ? "var(--hs-ink)" : "var(--hs-inkSoft)"} /><span className="tab-label">{label}</span>
+    <button className="press" onClick={onClick} style={{ border: "none", cursor: "pointer", padding: "11px 16px", borderRadius: "16px 16px 0 0", fontWeight: 800, fontSize: 14, color: active ? C.ink : C.inkSoft, background: active ? "rgba(255,255,255,.9)" : "rgba(255,255,255,.4)", boxShadow: active ? "0 -3px 12px -7px rgba(0,0,0,.3)" : "none", display: "flex", alignItems: "center", gap: 7 }}>
+      <Icon name={icon} size={17} color={active ? C.ink : C.inkSoft} /> {label}
     </button>
   );
 }
 function IconChip({ active, onClick, color, icon }) {
   return (
-    <button className="press" onClick={onClick} style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: `1.5px solid ${active ? color : "var(--hs-line)"}`, background: active ? color : "var(--hs-chip-bg)" }}>
-      <Icon name={icon} size={19} color={active ? "#fff" : "var(--hs-inkSoft)"} />
+    <button className="press" onClick={onClick} style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: `1.5px solid ${active ? color : C.line}`, background: active ? color : "rgba(255,255,255,.7)" }}>
+      <Icon name={icon} size={19} color={active ? "#fff" : C.inkSoft} />
     </button>
-  );
-}
-function ExitMenu({ onLeave, onSignOut }) {
-  const [open, setOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState({ top: 60, right: 16 });
-  const btnRef = useRef(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e) => { if (!e.target.closest("[data-exitmenu]")) setOpen(false); };
-    document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
-  }, [open]);
-  const toggle = () => {
-    if (!open && btnRef.current) {
-      const r = btnRef.current.getBoundingClientRect();
-      setMenuPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
-    }
-    setOpen(v => !v);
-  };
-  return (
-    <div data-exitmenu style={{ position: "relative" }}>
-      <button ref={btnRef} className="press" onClick={toggle} style={{ width: 38, height: 38, borderRadius: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid var(--hs-line)", background: "var(--hs-chip-bg)" }}>
-        <span style={{ display: "flex", flexDirection: "column", gap: 3.5, alignItems: "center", justifyContent: "center" }}>
-          {[0,1,2].map((i) => <span key={i} style={{ width: 4, height: 4, borderRadius: 999, background: "var(--hs-inkSoft)", display: "block" }} />)}
-        </span>
-      </button>
-      {open && (
-        <div data-exitmenu className="pop" style={{ position: "fixed", right: menuPos.right, top: menuPos.top, background: "var(--hs-card-bg)", borderRadius: 16, boxShadow: "0 16px 40px -12px rgba(0,0,0,.35)", border: "1px solid var(--hs-card-border)", backdropFilter: "blur(8px)", overflow: "hidden", zIndex: 100, minWidth: 170 }}>
-          <button className="press" onClick={() => { setOpen(false); onLeave(); }}
-            style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "var(--hs-ink)", borderBottom: "1px solid var(--hs-line)" }}>
-            <Icon name="close" size={16} color="var(--hs-inkSoft)" /> Leave room
-          </button>
-          <button className="press" onClick={() => { setOpen(false); onSignOut(); }}
-            style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", border: "none", background: "transparent", cursor: "pointer", fontSize: 14, fontWeight: 700, color: C.roseDeep }}>
-            <Icon name="arrow" size={16} color={C.roseDeep} style={{ transform: "rotate(180deg)" }} /> Sign out
-          </button>
-        </div>
-      )}
-    </div>
   );
 }

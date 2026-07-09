@@ -1,22 +1,16 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { drawStrokes, downloadKeepsake } from "../lib/drawingRender";
-import { C, Icon, card, primary, ghost, Chip, useC } from "../ui";
+import { C, Icon, card, primary, ghost, Chip } from "../ui";
 
 const BASE_W = 320, BASE_H = 230;
-const SUB = {
-  same: { label: "Same prompt", icon: "rings" }, pictionary: { label: "Pictionary", icon: "eye" }, free: { label: "Free draw", icon: "spark" },
-  paint: { label: "Paint Your Partner", icon: "user" }, duel: { label: "Quick Draw Duel", icon: "bolt" },
-  scene: { label: "Dream Scene", icon: "frame" }, memory: { label: "Memory Gallery", icon: "heart" },
-  studio: { label: "Studio", icon: "palette" },
-};
+const SUB = { same: { label: "Same prompt", icon: "rings" }, pictionary: { label: "Pictionary", icon: "eye" }, free: { label: "Free draw", icon: "spark" } };
 
-const StrokeImg = memo(function StrokeImg({ strokes, w, color }) {
-  const RC = useC();
+function StrokeImg({ strokes, w, color }) {
   const ref = useRef(null);
-  useEffect(() => { const c = ref.current, d = 2, h = Math.round(w * BASE_H / BASE_W); c.width = w * d; c.height = h * d; const x = c.getContext("2d"); x.scale(d, d); x.fillStyle = RC.paper; x.fillRect(0, 0, w, h); drawStrokes(x, strokes || [], w / BASE_W); }, [strokes, w, RC.paper]); // eslint-disable-line
+  useEffect(() => { const c = ref.current, d = 2, h = Math.round(w * BASE_H / BASE_W); c.width = w * d; c.height = h * d; const x = c.getContext("2d"); x.scale(d, d); x.fillStyle = C.paper; x.fillRect(0, 0, w, h); drawStrokes(x, strokes || [], w / BASE_W); }, [strokes, w]);
   return <div style={{ flex: 1, borderRadius: 12, overflow: "hidden", border: `2px solid ${color}` }}><canvas ref={ref} style={{ width: "100%", display: "block" }} /></div>;
-});
+}
 
 export function Gallery({ roomId }) {
   const [items, setItems] = useState(null);
@@ -25,13 +19,8 @@ export function Gallery({ roomId }) {
 
   useEffect(() => {
     if (!roomId) return; let alive = true;
-    // Subscribe first, then fetch — so no INSERT can slip through the gap
-    const ch = supabase.channel(`gallery:${roomId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "drawings", filter: `room_id=eq.${roomId}` },
-        ({ new: row }) => setItems((p) => p ? [row, ...p] : [row]))
-      .subscribe();
-    supabase.from("drawings").select("*").eq("room_id", roomId).order("created_at", { ascending: false })
-      .then(({ data }) => { if (alive) setItems((p) => p === null ? (data || []) : p); });
+    supabase.from("drawings").select("*").eq("room_id", roomId).order("created_at", { ascending: false }).then(({ data }) => { if (alive) setItems(data || []); });
+    const ch = supabase.channel(`gallery:${roomId}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "drawings", filter: `room_id=eq.${roomId}` }, ({ new: row }) => setItems((p) => [row, ...(p || [])])).subscribe();
     return () => { alive = false; supabase.removeChannel(ch); };
   }, [roomId]);
 

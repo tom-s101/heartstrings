@@ -3,7 +3,7 @@ import { C, Icon, card, qText, Chip, Primary, Dealing, fate, linkBtn } from "../
 
 const CATS = [
   { id: "deep", label: "Deep", icon: "moon" }, { id: "silly", label: "Silly", icon: "spark" },
-  { id: "romantic", label: "Romantic", icon: "heart" }, { id: "wholesome", label: "Wholesome", icon: "flower" },
+  { id: "spicy", label: "Spicy", icon: "flame" }, { id: "wholesome", label: "Wholesome", icon: "flower" },
   { id: "hypothetical", label: "Hypothetical", icon: "dice" },
 ];
 const FORMATS = [
@@ -12,6 +12,9 @@ const FORMATS = [
   { id: "mostlikely", name: "Most Likely To", icon: "point" }, { id: "nhie", name: "Never Have I Ever", icon: "eye" },
   { id: "newlywed", name: "How Well You Know Me", icon: "rings" }, { id: "hottake", name: "Hot Takes", icon: "chili" },
   { id: "thisorthat", name: "This or That", icon: "bolt" }, { id: "truthdare", name: "Truth or Dare", icon: "gift" },
+  { id: "lovelang", name: "Love Language Check", icon: "twoHearts" },
+  { id: "twotruths", name: "Two Truths & a Fib", icon: "dice" },
+  { id: "compat", name: "Compatibility Meter", icon: "heart" },
 ];
 const VIBES = [{ id: "sweet", icon: "flower", label: "Sweet" }, { id: "silly", icon: "spark", label: "Silly" }, { id: "flirty", icon: "flame", label: "Flirty" }, { id: "deep", icon: "moon", label: "Deep" }];
 const CHOICES = {
@@ -21,77 +24,79 @@ const CHOICES = {
   agreeDisagree: [{ k: "agree", label: "Agree", icon: "thumbUp", c: C.sageDeep }, { k: "disagree", label: "Disagree", icon: "thumbDown", c: C.roseDeep }],
 };
 
-export function Questions({ room, mine, names }) {
+// Legacy/defense-in-depth guard: refuse to render prompts that still contain
+// raw JSON punctuation (the symptom of a malformed AI reply leaking through).
+const looksGarbled = (s) => typeof s !== "string" || /[{}[\]]/.test(s);
+
+export function Questions({ room, mine, local = false, names = null }) {
   const { state, commit, generateQuestion } = room;
   const q = state.q;
   const meColor = mine === "him" ? C.blue : C.rose;
   const [td, setTd] = [q._td, (v) => commit((s) => { s.q._td = v; return s; })]; // synced truth/dare reveal
 
   const setStyle = (style) => commit((s) => { s.q.style = style; s.q.sel = style === "classic" ? "deep" : "wyr"; return s; });
-  const setSel = (sel) => commit((s) => { s.q.sel = sel; return s; }); // no auto-generate on select
+  const setSel = (sel) => { commit((s) => { s.q.sel = sel; return s; }); generateQuestion({ sel, vibe: q.vibe, theme: q.theme }); };
   const setVibe = (vibe) => commit((s) => { s.q.vibe = vibe; return s; });
   const setTheme = (theme) => commit((s) => { s.q.theme = theme; return s; });
-  // setting my pick also scores the round if it completes the pair — done in one
-  // commit so it can't double-count and doesn't depend on either client staying online
-  const setPick = (k) => commit((s) => {
-    s.q.picks = { ...s.q.picks, [mine]: k };
+
+  // one commit sets the pick AND scores if it completes the pair — can't
+  // double-count. In local (one-device) mode either side can be tapped;
+  // in distance mode PickArea only ever calls this with your own side.
+  const setPick = (side, k) => commit((s) => {
+    s.q.picks = { ...s.q.picks, [side]: k };
     const p = s.q.picks;
-    if (s.feel === "gamenight" && p.him && p.her && !s.q.awarded) { // s.feel not state.feel
+    if (state.feel === "gamenight" && p.him && p.her && !s.q.awarded) {
       s.q.awarded = true;
-      if (p.him === p.her) { s.score.him = (s.score.him || 0) + 1; s.score.her = (s.score.her || 0) + 1; }
+      const shape = s.q.round?.shape;
+      if (shape === "threeChoice") {
+        const ci = String(s.q.round.correctIndex);
+        if (p.him === ci) s.score.him = (s.score.him || 0) + 1;
+        if (p.her === ci) s.score.her = (s.score.her || 0) + 1;
+      } else if (shape === "redGreen" && s.q.round?.answer) {
+        const ans = s.q.round.answer;
+        if (p.him === ans) s.score.him = (s.score.him || 0) + 1;
+        if (p.her === ans) s.score.her = (s.score.her || 0) + 1;
+      } else if (p.him === p.her) {
+        s.score.him = (s.score.him || 0) + 1; s.score.her = (s.score.her || 0) + 1;
+      }
     }
     return s;
   });
-  // a hung/abandoned generation (e.g. partner dropped mid-generate) self-heals after 18s
+
+  const setSlider = (side, val) => commit((s) => {
+    s.q.picks = { ...s.q.picks, [side]: String(val) };
+    const p = s.q.picks;
+    if (state.feel === "gamenight" && p.him != null && p.her != null && !s.q.awarded) {
+      s.q.awarded = true;
+      const gap = Math.abs(Number(p.him) - Number(p.her));
+      if (!Number.isNaN(gap) && gap <= 15) { s.score.him = (s.score.him || 0) + 1; s.score.her = (s.score.her || 0) + 1; }
+    }
+    return s;
+  });
+
   const stale = q.generating && q.genAt && Date.now() - q.genAt > 18000;
   const next = () => generateQuestion({ sel: q.sel, vibe: q.vibe, theme: q.theme });
-  const [view, setView] = useState("play"); // "play" | "history"
 
   return (
     <div>
       <div style={{ display: "flex", gap: 8, background: "rgba(255,255,255,.55)", borderRadius: 16, padding: 6, marginBottom: 18 }}>
-        {[["classic", "chat", "Classic"], ["games", "card", "Game modes"], ["history", "refresh", `History${q.history?.length ? ` (${q.history.length})` : ""}`]].map(([id, ic, l]) => {
-          const isView = id === "history";
-          const active = isView ? view === "history" : (view === "play" && q.style === id);
-          return (
-            <button key={id} className="press"
-              onClick={() => isView ? setView(v => v === "history" ? "play" : "history") : (setView("play"), setStyle(id))}
-              style={{ flex: 1, border: "none", borderRadius: 12, padding: "11px 6px", cursor: "pointer", background: active ? "#fff" : "transparent", color: active ? C.ink : C.inkSoft, fontWeight: 800, fontSize: 13.5, boxShadow: active ? "0 8px 18px -12px rgba(0,0,0,.5)" : "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-              <Icon name={ic} size={16} color={active ? C.ink : C.inkSoft} /> {l}
-            </button>
-          );
-        })}
+        {[["classic", "chat", "Classic"], ["games", "card", "Game modes"]].map(([id, ic, l]) => (
+          <button key={id} className="press" onClick={() => setStyle(id)} style={{ flex: 1, border: "none", borderRadius: 12, padding: "11px", cursor: "pointer", background: q.style === id ? "#fff" : "transparent", color: q.style === id ? C.ink : C.inkSoft, fontWeight: 800, fontSize: 14.5, boxShadow: q.style === id ? "0 8px 18px -12px rgba(0,0,0,.5)" : "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+            <Icon name={ic} size={17} color={q.style === id ? C.ink : C.inkSoft} /> {l}
+          </button>
+        ))}
       </div>
 
-      {view === "history" ? (
-        <div>
-          {!q.history?.length ? (
-            <div style={{ textAlign: "center", padding: "40px 0", color: C.inkSoft }}>
-              <Icon name="chat" size={32} color={C.line} style={{ margin: "0 auto 10px" }} />
-              <p style={{ fontFamily: "'Caveat',cursive", fontSize: 20 }}>no questions yet — generate one to start!</p>
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {[...q.history].reverse().map((h, i) => (
-                <div key={i} style={{ background: "rgba(255,255,255,.85)", borderRadius: 16, padding: "14px 16px", border: `1px solid ${C.line}` }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, color: C.inkSoft }}>
-                    <Icon name="chat" size={13} color={C.inkSoft} />
-                    <span style={{ fontSize: 11.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".5px" }}>{h.sel} · #{q.history.length - i}</span>
-                  </div>
-                  <p style={{ fontFamily: "'Fraunces',serif", fontSize: 16, margin: 0, color: C.ink, lineHeight: 1.4 }}>{h.prompt}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : q.style === "classic" ? (
+      {q.style === "classic" ? (
         <>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
             {CATS.map((c) => <Chip key={c.id} active={q.sel === c.id} color={meColor} icon={c.icon} label={c.label} onClick={() => setSel(c.id)} />)}
           </div>
           <ThemeInput value={q.theme} onChange={setTheme} />
           <Card count={q.count} sel={q.sel} icon={CATS.find((c) => c.id === q.sel)?.icon} generating={q.generating} genMine={q.genBy === room.clientId}>
-            <p style={qText}>{q.round?.prompt}</p>
+            {looksGarbled(q.round?.prompt)
+              ? <GlitchNotice onRetry={next} />
+              : <p style={qText}>{q.round?.prompt}</p>}
           </Card>
           <Primary onClick={next} loading={q.generating && !stale} icon="spark" label={q.generating ? "thinking…" : "new question"} />
           <Turn turn={q.turn} names={names} />
@@ -114,17 +119,32 @@ export function Questions({ room, mine, names }) {
           </div>
           <ThemeInput value={q.theme} onChange={setTheme} />
           <Card count={q.count} sel={q.sel} icon={FORMATS.find((f) => f.id === q.sel)?.icon} name={FORMATS.find((f) => f.id === q.sel)?.name} generating={q.generating} genMine={q.genBy === room.clientId}>
-            <RoundCard round={q.round} picks={q.picks} mine={mine} setPick={setPick} td={td} setTd={setTd} />
+            {q.round && looksGarbled(q.round.prompt) && q.round.shape !== "truthDare"
+              ? <GlitchNotice onRetry={next} />
+              : <RoundCard round={q.round} picks={q.picks} mine={mine} setPick={setPick} setSlider={setSlider} td={td} setTd={setTd} local={local} names={names} />}
           </Card>
           <Primary onClick={next} loading={q.generating && !stale} icon="refresh" label={q.generating ? "dealing…" : "new round"} />
-          <Turn turn={q.turn} names={names} />
-          <p style={{ textAlign: "center", fontSize: 12, color: C.inkSoft, marginTop: 6 }}>each of you taps your own answer — then see if you match</p>
+          <p style={{ textAlign: "center", fontSize: 12, color: C.inkSoft, marginTop: 10 }}>
+            {local ? "take turns tapping your answers on this screen — then see if you match" : "each of you taps your own answer — then see if you match"}
+          </p>
         </>
       )}
     </div>
   );
 }
 
+function GlitchNotice({ onRetry }) {
+  return (
+    <div style={{ textAlign: "center", padding: "18px 0" }}>
+      <p style={{ fontFamily: "'Caveat',cursive", fontSize: 20, color: C.inkSoft, marginBottom: 12 }}>
+        hmm, that card came out a little glitchy ✶
+      </p>
+      <button className="press" onClick={onRetry} style={{ border: `1.5px solid ${C.sage}`, background: "#fff", borderRadius: 13, padding: "9px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer", color: C.ink }}>
+        try a fresh one
+      </button>
+    </div>
+  );
+}
 
 function Card({ count, icon, name, generating, genMine, children }) {
   return (
@@ -136,45 +156,34 @@ function Card({ count, icon, name, generating, genMine, children }) {
     </div>
   );
 }
-function ThemeInput({ value, onChange }) {
-  const [local, setLocal] = useState(value || "");
-  // Sync inward only when room state changes from outside (e.g. partner clears it)
-  const prev = useState(value)[0];
-  if (value !== prev && value !== local) setLocal(value || "");
-  const flush = () => { if (local !== value) onChange(local); };
-  return (
-    <input
-      value={local}
-      onChange={(e) => setLocal(e.target.value)}
-      onBlur={flush}
-      onKeyDown={(e) => e.key === "Enter" && flush()}
-      placeholder="optional theme… e.g. our future, food, travel"
-      style={{ width: "100%", padding: "10px 12px", borderRadius: 13, border: `1.5px solid ${C.line}`, fontFamily: "inherit", fontSize: 14, color: C.ink, background: C.paper, outline: "none", marginBottom: 16 }} />
-  );
-}
-const Turn = ({ turn, names }) => {
-  const name = names?.[turn]?.name || (turn === "him" ? "his" : "her");
-  const possessive = names?.[turn]?.name ? `${name}'s` : name;
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 12 }}>
-      <Icon name={turn === "him" ? "wave" : "lotus"} size={16} color={turn === "him" ? C.blue : C.rose} />
-      <span style={{ fontFamily: "'Caveat',cursive", fontSize: 18, color: C.inkSoft }}>{possessive} turn to answer first</span>
-    </div>
-  );
-};
+const ThemeInput = ({ value, onChange }) => (
+  <input value={value || ""} onChange={(e) => onChange(e.target.value)} placeholder="optional theme… e.g. our future, food, travel"
+    style={{ width: "100%", padding: "10px 12px", borderRadius: 13, border: `1.5px solid ${C.line}`, fontFamily: "inherit", fontSize: 14, color: C.ink, background: C.paper, outline: "none", marginBottom: 16 }} />
+);
+const Turn = ({ turn, names }) => (
+  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 12 }}>
+    <Icon name={turn === "him" ? "wave" : "lotus"} size={16} color={turn === "him" ? C.blue : C.rose} />
+    <span style={{ fontFamily: "'Caveat',cursive", fontSize: 18, color: C.inkSoft }}>
+      {names ? `${names[turn]}'s` : (turn === "him" ? "his" : "her")} turn to answer first
+    </span>
+  </div>
+);
 
-function RoundCard({ round, picks, mine, setPick, td, setTd }) {
+function RoundCard({ round, picks, mine, setPick, setSlider, td, setTd, local, names }) {
   if (!round) return null;
   const { shape } = round;
+  const pa = { picks, mine, setPick, local, names };
+
   if (shape === "choice2") return (
     <div>
       <p style={{ ...qText, marginBottom: 16 }}>{round.prompt}</p>
       <div style={{ display: "flex", gap: 10 }}>
         {[0, 1].map((i) => <div key={i} style={{ flex: 1, borderRadius: 16, padding: "16px 12px", textAlign: "center", background: i === 0 ? C.blueLight : C.roseLight, fontFamily: "'Fraunces',serif", fontSize: 16, fontWeight: 500 }}>{round.options?.[i]}</div>)}
       </div>
-      <PickArea options={[{ k: "0", label: round.options?.[0] }, { k: "1", label: round.options?.[1] }]} picks={picks} mine={mine} setPick={setPick} />
+      <PickArea options={[{ k: "0", label: round.options?.[0] }, { k: "1", label: round.options?.[1] }]} {...pa} />
     </div>
   );
+
   if (shape === "truthDare") return (
     <div style={{ textAlign: "center" }}>
       {!td ? (<>
@@ -187,47 +196,159 @@ function RoundCard({ round, picks, mine, setPick, td, setTd }) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 8, color: td === "truth" ? C.blueDeep : C.roseDeep }}>
           <Icon name={td === "truth" ? "chat" : "spark"} size={16} color={td === "truth" ? C.blueDeep : C.roseDeep} /><span style={{ fontWeight: 800, fontSize: 12, letterSpacing: ".5px" }}>{td === "truth" ? "TRUTH" : "DARE"}</span>
         </div>
-        <p style={qText}>{td === "truth" ? round.truth : round.dare}</p>
+        <p style={qText}>{looksGarbled(td === "truth" ? round.truth : round.dare) ? "hmm, that one glitched — tap New Round" : (td === "truth" ? round.truth : round.dare)}</p>
         <button onClick={() => setTd(td === "truth" ? "dare" : "truth")} style={linkBtn}>show the {td === "truth" ? "dare" : "truth"} instead</button>
       </>)}
     </div>
   );
+
   if (shape === "open") return (
     <div style={{ textAlign: "center" }}>
       <p style={{ ...qText, margin: "10px 0" }}>{round.prompt}</p>
       <div style={{ display: "inline-flex", alignItems: "center", gap: 6, color: C.sage }}><Icon name="chat" size={16} color={C.sage} /><span style={{ fontFamily: "'Caveat',cursive", fontSize: 19 }}>answer out loud — then trade</span></div>
     </div>
   );
+
+  if (shape === "redGreen") {
+    const both = picks?.him && picks?.her;
+    return (
+      <div>
+        <p style={{ ...qText, margin: "4px 0 16px" }}>{round.prompt}</p>
+        <PickArea options={CHOICES.redGreen} {...pa} correctKey={both ? round.answer : null} hideMatchMsg />
+        {both && round.answer && (
+          <div style={{ textAlign: "center", marginTop: 12 }}>
+            <span style={{ fontFamily: "'Caveat',cursive", fontSize: 19, color: round.answer === "red" ? C.roseDeep : C.sageDeep }}>
+              we were going for a {round.answer} flag on this one
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (shape === "choiceMulti") {
+    const opts = (round.options || []).map((label, i) => ({ k: String(i), label }));
+    return (
+      <div>
+        <p style={{ ...qText, margin: "4px 0 16px" }}>{round.prompt}</p>
+        <PickArea options={opts} {...pa} />
+      </div>
+    );
+  }
+
+  if (shape === "threeChoice") {
+    const opts = (round.options || []).map((label, i) => ({ k: String(i), label }));
+    const both = picks?.him && picks?.her;
+    return (
+      <div>
+        <p style={{ ...qText, margin: "4px 0 16px" }}>{round.prompt}</p>
+        <PickArea options={opts} {...pa} correctKey={both ? String(round.correctIndex) : null} hideMatchMsg />
+        {both && !looksGarbled(round.explain) && (
+          <div style={{ textAlign: "center", marginTop: 12, fontFamily: "'Caveat',cursive", fontSize: 18, color: C.inkSoft }}>{round.explain}</div>
+        )}
+      </div>
+    );
+  }
+
+  if (shape === "slider") {
+    return <SliderRound round={round} picks={picks} mine={mine} setSlider={setSlider} local={local} names={names} />;
+  }
+
+  // pickPerson, yesNo, agreeDisagree
   return (
     <div>
       <p style={{ ...qText, margin: "4px 0 16px" }}>{round.prompt}</p>
-      <PickArea options={CHOICES[shape]} picks={picks} mine={mine} setPick={setPick} />
+      <PickArea options={CHOICES[shape]} {...pa} />
     </div>
   );
 }
 
-function PickArea({ options, picks, mine, setPick }) {
+/* Compatibility Meter. Distance: each device sets its own. Local: pass the
+   phone — blue answers first while rose looks away, then swap, then reveal. */
+function SliderRound({ round, picks, mine, setSlider, local, names }) {
+  const him = picks?.him != null ? Number(picks.him) : null;
+  const her = picks?.her != null ? Number(picks.her) : null;
+  const both = him != null && her != null;
+  const gap = both ? Math.abs(him - her) : null;
+  const gapMsg = gap == null ? "" : gap <= 10 ? "practically the same soul ✨" : gap <= 30 ? "cute and complementary" : "wonderfully different";
+  const activeSide = local ? (picks?.him == null ? "him" : picks?.her == null ? "her" : null) : mine;
+  const alreadyMine = !local && picks?.[mine] != null;
+
+  return (
+    <div>
+      <p style={{ ...qText, margin: "4px 0 16px" }}>{round.prompt}</p>
+      {!both && (local ? (
+        <SliderInput key={activeSide}
+          label={`${names?.[activeSide] || (activeSide === "him" ? "blue" : "rose")}, your turn — ${names?.[activeSide === "him" ? "her" : "him"] || "partner"} look away 👀`}
+          color={activeSide === "him" ? C.blue : C.rose}
+          onLock={(v) => setSlider(activeSide, v)} />
+      ) : !alreadyMine ? (
+        <SliderInput label="slide it, then lock in" color={mine === "him" ? C.blue : C.rose} onLock={(v) => setSlider(mine, v)} />
+      ) : (
+        <div style={{ textAlign: "center", fontFamily: "'Caveat',cursive", fontSize: 18, color: C.inkSoft }}>
+          you locked in {picks[mine]}% — waiting on your partner…
+        </div>
+      ))}
+      {both && (
+        <div style={{ marginTop: 6, textAlign: "center" }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon name="wave" size={16} color={C.blue} /><b style={{ fontFamily: "'Fraunces',serif", fontSize: 18 }}>{him}%</b>{names && <span style={{ fontSize: 12, color: C.inkSoft }}>{names.him}</span>}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}><Icon name="lotus" size={16} color={C.rose} /><b style={{ fontFamily: "'Fraunces',serif", fontSize: 18 }}>{her}%</b>{names && <span style={{ fontSize: 12, color: C.inkSoft }}>{names.her}</span>}</div>
+          </div>
+          <div style={{ fontFamily: "'Caveat',cursive", fontSize: 19, color: C.sageDeep, marginTop: 8 }}>{gapMsg}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+function SliderInput({ label, color, onLock }) {
+  const [val, setVal] = useState(50);
+  return (
+    <div>
+      <div style={{ textAlign: "center", fontFamily: "'Caveat',cursive", fontSize: 18, color, marginBottom: 8 }}>{label}</div>
+      <input type="range" min="0" max="100" value={val} onChange={(e) => setVal(Number(e.target.value))} style={{ width: "100%" }} />
+      <div style={{ textAlign: "center", fontFamily: "'Fraunces',serif", fontSize: 24, fontWeight: 600, margin: "8px 0 14px" }}>{val}%</div>
+      <Primary onClick={() => onLock(val)} icon="check" label="lock in my answer" />
+    </div>
+  );
+}
+
+function PickArea({ options, picks, mine, setPick, correctKey = null, hideMatchMsg = false, local = false, names = null }) {
   const both = picks?.him && picks?.her;
   const match = both && picks.him === picks.her;
-  const Row = ({ side, color, deep, sideIcon, label }) => {
-    const isMine = side === mine;
+  const Row = ({ side, color, deep, sideIcon, fallback }) => {
+    const canTap = local || side === mine;
+    const sidePicked = picks?.[side] != null;
+    // Distance: partner's choice stays hidden until both answered, then both
+    // reveal at once. Local (one screen): picks show immediately — honor system.
+    const revealed = local || side === mine || both;
+    const label = names?.[side] || fallback;
     return (
       <div style={{ flex: 1 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, marginBottom: 6, color: deep }}>
-          <Icon name={sideIcon} size={15} color={deep} /><span style={{ fontFamily: "'Caveat',cursive", fontSize: 17 }}>{label}{isMine ? " (you)" : ""}</span>
+          <Icon name={sideIcon} size={15} color={deep} /><span style={{ fontFamily: "'Caveat',cursive", fontSize: 17 }}>{label}{!local && side === mine ? " (you)" : ""}</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {options.map((o) => {
-            const on = picks?.[side] === o.k;
-            const dim = !isMine && !on;
+            const on = revealed && picks?.[side] === o.k;
+            const dim = !canTap && revealed && !on;
+            const isCorrect = correctKey != null && o.k === correctKey;
             return (
-              <button key={o.k} className={isMine ? "press" : ""} onClick={isMine ? () => setPick(o.k) : undefined} disabled={!isMine}
-                style={{ border: `1.5px solid ${on ? color : C.line}`, background: on ? color : "#fff", color: on ? "#fff" : C.ink, opacity: dim ? .45 : 1, borderRadius: 12, padding: "9px 10px", cursor: isMine ? "pointer" : "default", fontWeight: 700, fontSize: 13, lineHeight: 1.2, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+              <button key={o.k} className={canTap ? "press" : ""} onClick={canTap ? () => setPick(side, o.k) : undefined} disabled={!canTap}
+                style={{
+                  border: `1.5px solid ${isCorrect ? C.sageDeep : (on ? color : C.line)}`,
+                  background: on ? color : (isCorrect ? `${C.sageDeep}22` : "#fff"),
+                  color: on ? "#fff" : C.ink, opacity: dim ? .45 : 1, borderRadius: 12, padding: "9px 10px",
+                  cursor: canTap ? "pointer" : "default", fontWeight: 700, fontSize: 13, lineHeight: 1.2,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                }}>
                 {o.icon && <Icon name={o.icon} size={16} color={on ? "#fff" : (o.c || C.inkSoft)} />}{o.label}
+                {isCorrect && <Icon name="check" size={14} color={C.sageDeep} />}
               </button>
             );
           })}
-          {!isMine && !picks?.[side] && <span style={{ textAlign: "center", fontFamily: "'Caveat',cursive", fontSize: 16, color: C.inkSoft }}>waiting…</span>}
+          {!local && side !== mine && !sidePicked && <span style={{ textAlign: "center", fontFamily: "'Caveat',cursive", fontSize: 16, color: C.inkSoft }}>waiting…</span>}
+          {!local && side !== mine && sidePicked && !both && <span style={{ textAlign: "center", fontFamily: "'Caveat',cursive", fontSize: 15, color: C.inkSoft }}>answered — hidden until you both pick</span>}
         </div>
       </div>
     );
@@ -235,10 +356,10 @@ function PickArea({ options, picks, mine, setPick }) {
   return (
     <div style={{ marginTop: 16 }}>
       <div style={{ display: "flex", gap: 14 }}>
-        <Row side="him" color={C.blue} deep={C.blueDeep} sideIcon="wave" label="his" />
-        <Row side="her" color={C.rose} deep={C.roseDeep} sideIcon="lotus" label="her" />
+        <Row side="him" color={C.blue} deep={C.blueDeep} sideIcon="wave" fallback="his" />
+        <Row side="her" color={C.rose} deep={C.roseDeep} sideIcon="lotus" fallback="her" />
       </div>
-      {both && (
+      {both && !hideMatchMsg && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 14 }}>
           <Icon name={match ? "twoHearts" : "split"} size={20} color={match ? C.sage : C.gold} />
           <span style={{ fontFamily: "'Caveat',cursive", fontSize: 23, color: match ? C.sageDeep : C.gold }}>{match ? "you matched!" : "you're split — defend yourselves"}</span>

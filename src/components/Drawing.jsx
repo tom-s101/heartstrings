@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { C, Icon, card, primary, ghost, useC } from "../ui";
+import { C, Icon, card, primary, ghost } from "../ui";
 import { drawStrokes } from "../lib/drawingRender";
 
 /* ============================================================================
@@ -25,9 +25,10 @@ const STUDIO = [
 ];
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
 
-export function Drawing({ room, mine, partnerOnline }) {
+export function Drawing({ room, mine, partnerOnline, local = false, names = null }) {
   const { state, commit } = room;
   const d = state.d;
+  if (local) return <LocalDrawing room={room} names={names} />;
   const style = d.style || "classic";
   const setStyle = (st) => commit((s) => { s.d.style = st; if (st === "studio" && !s.d.studio) { s.d.studio = "paint"; s.d.prompt = "draw each other!"; s.d.revealed = false; } return s; });
   return (
@@ -46,33 +47,16 @@ export function Drawing({ room, mine, partnerOnline }) {
   );
 }
 
-const DIFFICULTIES = [["easy","leaf","Easy"],["medium","spark","Medium"],["hard","flame","Hard"],["extreme","bolt","Extreme"]];
-const DIFF_PROMPTS = {
-  easy: "Give me ONE very simple common object that's easy to draw in Pictionary — like 'cat', 'house', 'sun'. Just the one word, nothing else.",
-  medium: "Give me ONE medium-difficulty Pictionary word — an action, animal, or everyday concept. Just the word or short phrase, nothing else.",
-  hard: "Give me ONE challenging Pictionary word or phrase — something abstract or less obvious. Just the word or phrase, nothing else.",
-  extreme: "Give me ONE extremely hard Pictionary challenge — an idiom, movie title, or tricky concept like 'quantum entanglement' or 'déjà vu'. Just the phrase, nothing else.",
-};
-
 /* ===================== CLASSIC ===================== */
 function Classic({ room, mine, partnerOnline }) {
-  const { state, commit, mineStrokes, partnerStrokes, pushStroke, clearMine, saveDrawing, aiAssist } = room;
+  const { state, commit, mineStrokes, partnerStrokes, pushStroke, clearMine, saveDrawing } = room;
   const d = state.d; const feel = state.feel;
-  const [genBusy, setGenBusy] = useState(false);
   const lastRound = useRef(d.round);
   useEffect(() => { if (d.round !== lastRound.current) { lastRound.current = d.round; clearMine(); } }, [d.round]); // eslint-disable-line
   const remaining = useCountdown(d, () => commit((s)=>{ s.d.revealed=true; s.d.endsAt=null; return s; }));
 
   const setSub = (sub) => commit((s) => { s.d.sub=sub; s.d.prompt=pick(CLASSIC_PROMPTS[sub]); s.d.revealed=false; s.d.endsAt=null; s.d.round=(s.d.round||1)+1; if(sub==="pictionary") s.d.artist=s.d.artist||"him"; return s; });
   const newPrompt = () => commit((s) => { s.d.prompt=pick(CLASSIC_PROMPTS[s.d.sub||"same"]); s.d.revealed=false; s.d.endsAt=null; s.d.round=(s.d.round||1)+1; if(s.d.sub==="pictionary") s.d.artist=s.d.artist==="him"?"her":"him"; return s; });
-  const setDifficulty = (diff) => commit((s) => { s.d.difficulty = diff; return s; });
-  const generateWord = async () => {
-    setGenBusy(true);
-    const diff = d.difficulty || "medium";
-    const word = await aiAssist(DIFF_PROMPTS[diff]);
-    setGenBusy(false);
-    if (word) commit((s) => { s.d.prompt = word.trim().replace(/^["'.,]+|["'.,]+$/g,""); s.d.revealed=false; s.d.round=(s.d.round||1)+1; s.d.artist=mine; return s; });
-  };
   const startTimer = () => commit((s) => { s.d.endsAt=Date.now()+ (s.d.duration||60)*1000; s.d.revealed=false; return s; });
   const reveal = () => commit((s) => { s.d.revealed=true; s.d.endsAt=null; return s; });
   const gotIt = () => commit((s) => { s.d.revealed=true; if(s.feel==="gamenight"){ s.score.him=(s.score.him||0)+1; s.score.her=(s.score.her||0)+1; } return s; });
@@ -81,24 +65,6 @@ function Classic({ room, mine, partnerOnline }) {
   return (
     <div style={card({ padding:20 })}>
       <ChipRow items={CLASSIC} active={d.sub||"same"} onPick={setSub} />
-      {isP && (
-        <div style={{ marginBottom:14 }}>
-          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:10, justifyContent:"center" }}>
-            {DIFFICULTIES.map(([id,ic,l]) => (
-              <button key={id} className="press" onClick={()=>setDifficulty(id)}
-                style={{ border:`1.5px solid ${(d.difficulty||"medium")===id?C.gold:C.line}`, background:(d.difficulty||"medium")===id?C.gold:"var(--hs-chip-bg)", color:(d.difficulty||"medium")===id?"#fff":"var(--hs-inkSoft)", borderRadius:999, padding:"6px 12px", cursor:"pointer", fontWeight:700, fontSize:12.5, display:"inline-flex", alignItems:"center", gap:5 }}>
-                <Icon name={ic} size={13} color={(d.difficulty||"medium")===id?"#fff":C.gold} />{l}
-              </button>
-            ))}
-          </div>
-          {amArtist && (
-            <button className="press" onClick={generateWord} disabled={genBusy}
-              style={{ ...primary(true,{width:"100%",opacity:genBusy?.6:1,fontSize:14}), background:`linear-gradient(90deg,${C.gold},${C.sageDeep})` }}>
-              <Icon name="spark" size={17} color="#fff" /> {genBusy ? "generating…" : "✦ generate a word to draw"}
-            </button>
-          )}
-        </div>
-      )}
       <Head label={isP ? (amArtist?"you're the artist — draw:":"guess what they're drawing!") : "both draw:"} prompt={isP && !amArtist && !d.revealed ? hide(d.prompt) : d.prompt} time={feel!=="chill"?remaining:null} endsAt={d.endsAt} />
       {isP
         ? <div style={{ maxWidth:380, margin:"0 auto" }}>{amArtist ? <Canvas color={col(mine)} editable strokes={mineStrokes} onStroke={pushStroke} palette /> : <Canvas color={col(other(mine))} strokes={partnerStrokes} live />}</div>
@@ -241,7 +207,7 @@ function Collab({ room, mine, m }) {
       <Canvas color={C.sage} editable strokes={all} onStroke={pushStroke} palette height={280} />
       <div style={{ display:"flex", gap:10, marginTop:16 }}>
         <button className="press" onClick={saveDrawing} style={ghost}><Icon name="frame" size={17} color={C.ink} /> save</button>
-        <button className="press" onClick={()=>{ if(window.confirm("Clear the canvas? This can't be undone.")) commit((s)=>{ s.d.round=(s.d.round||1)+1; return s; }); }} style={btn(C.sage,{flex:1})}><Icon name="refresh" size={17} color="#fff" /> clear canvas</button>
+        <button className="press" onClick={()=>commit((s)=>{ s.d.round=(s.d.round||1)+1; return s; })} style={btn(C.sage,{flex:1})}><Icon name="refresh" size={17} color="#fff" /> clear canvas</button>
       </div>
       <p style={{ textAlign:"center", fontSize:12, color:C.inkSoft, marginTop:10 }}>one shared canvas — you both draw on it live</p>
     </div>
@@ -270,7 +236,7 @@ function Chain({ room, mine, m }) {
         else { ch.push({ who: mine, type: "draw", value: mineStrokes }); }
         s.d.chain = ch; s.d.round = (s.d.round || 1) + 1; return s;
       });
-      setText(""); clearMine();
+      setText("");
     };
     if (d.revealed || done) return <Reveal chain={chain} onNew={() => commit((s)=>{ s.d.chain=[{who:"her",type:"sentence",value:m.prompts[0]}]; s.d.revealed=false; s.d.round=(s.d.round||1)+1; return s; })} />;
     return (
@@ -292,7 +258,7 @@ function Chain({ room, mine, m }) {
   const SECT = ["head","torso","legs"];
   const step = chain.length; const TURN = step % 2 === 0 ? "him" : "her"; const myTurn = TURN === mine;
   if (d.revealed || step >= SECT.length) return <StackReveal chain={chain} prompt={m.prompts[0]} onNew={()=>commit((s)=>{ s.d.chain=[]; s.d.revealed=false; s.d.round=(s.d.round||1)+1; return s; })} />;
-  const pass = () => { commit((s)=>{ const ch=[...(s.d.chain||[])]; ch.push({ who:mine, type:"band", value:mineStrokes }); s.d.chain=ch; s.d.round=(s.d.round||1)+1; return s; }); clearMine(); };
+  const pass = () => { commit((s)=>{ const ch=[...(s.d.chain||[])]; ch.push({ who:mine, type:"band", value:mineStrokes }); s.d.chain=ch; s.d.round=(s.d.round||1)+1; return s; }); };
   return (
     <div>
       <div style={{ textAlign:"center", marginBottom:12 }}>
@@ -364,188 +330,27 @@ function Controls({ feel, d, isP, amArtist, onStart, onReveal, onGotIt, onSave, 
   );
 }
 
-/* ── Color wheel utilities ─────────────────────────────── */
-function hexToHsb(hex) {
-  let r=parseInt(hex.slice(1,3),16)/255, g=parseInt(hex.slice(3,5),16)/255, b=parseInt(hex.slice(5,7),16)/255;
-  const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min;
-  let h=0, s=max===0?0:d/max, bv=max;
-  if(d){if(max===r)h=((g-b)/d+(g<b?6:0))/6;else if(max===g)h=((b-r)/d+2)/6;else h=((r-g)/d+4)/6;}
-  return {h:h*360,s:s*100,b:bv*100};
-}
-function hsbToHex(h,s,b){
-  s/=100;b/=100;const k=n=>(n+h/60)%6,f=n=>b*(1-s*Math.max(0,Math.min(k(n),4-k(n),1)));
-  return `#${[f(5),f(3),f(1)].map(v=>Math.round(v*255).toString(16).padStart(2,"0")).join("")}`;
-}
-function ColorWheel({ color, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [hsb, setHsb] = useState({h:0,s:100,b:100});
-  const wheelRef = useRef(null), sqRef = useRef(null);
-  const draggingW = useRef(false), draggingSq = useRef(false);
-  const popRef = useRef(null);
-  useEffect(()=>{try{setHsb(hexToHsb(color));}catch{}},[color]);
-  useEffect(()=>{
-    if(!open)return;
-    const SIZE=200,RING=22,c=wheelRef.current;if(!c)return;
-    c.width=c.height=SIZE;const ctx=c.getContext("2d");
-    for(let a=0;a<360;a++){ctx.beginPath();ctx.moveTo(SIZE/2,SIZE/2);ctx.arc(SIZE/2,SIZE/2,SIZE/2,(a-1)*Math.PI/180,(a+1)*Math.PI/180);ctx.closePath();ctx.fillStyle=`hsl(${a},100%,50%)`;ctx.fill();}
-    ctx.globalCompositeOperation="destination-out";ctx.beginPath();ctx.arc(SIZE/2,SIZE/2,SIZE/2-RING,0,2*Math.PI);ctx.fill();ctx.globalCompositeOperation="source-over";
-  },[open]);
-  useEffect(()=>{
-    if(!open)return;const sq=sqRef.current;if(!sq)return;const SQ=160;sq.width=sq.height=SQ;const ctx=sq.getContext("2d");
-    const g1=ctx.createLinearGradient(0,0,SQ,0);g1.addColorStop(0,"#fff");g1.addColorStop(1,`hsl(${hsb.h},100%,50%)`);ctx.fillStyle=g1;ctx.fillRect(0,0,SQ,SQ);
-    const g2=ctx.createLinearGradient(0,0,0,SQ);g2.addColorStop(0,"transparent");g2.addColorStop(1,"#000");ctx.fillStyle=g2;ctx.fillRect(0,0,SQ,SQ);
-  },[open,hsb.h]);
-  useEffect(()=>{
-    if(!open)return;
-    const close=(e)=>{if(popRef.current&&!popRef.current.contains(e.target))setOpen(false);};
-    document.addEventListener("pointerdown",close);return()=>document.removeEventListener("pointerdown",close);
-  },[open]);
-  const clientXY=(e)=>({x:e.touches?.[0]?.clientX??e.clientX,y:e.touches?.[0]?.clientY??e.clientY});
-  const onWheel=(e)=>{const r=wheelRef.current.getBoundingClientRect(),{x,y}=clientXY(e);const angle=(Math.atan2(y-(r.top+r.height/2),x-(r.left+r.width/2))*180/Math.PI+360)%360;const n={...hsb,h:angle};setHsb(n);onChange(hsbToHex(n.h,n.s,n.b));};
-  const onSq=(e)=>{const r=sqRef.current.getBoundingClientRect(),{x,y}=clientXY(e);const s=Math.max(0,Math.min(1,(x-r.left)/r.width))*100,b=(1-Math.max(0,Math.min(1,(y-r.top)/r.height)))*100;const n={...hsb,s,b};setHsb(n);onChange(hsbToHex(n.h,n.s,n.b));};
-  const SIZE=200,RING=22,R=SIZE/2-RING/2,SQ=160;
-  const hueX=SIZE/2+R*Math.cos(hsb.h*Math.PI/180),hueY=SIZE/2+R*Math.sin(hsb.h*Math.PI/180);
-  const sqX=(hsb.s/100)*SQ,sqY=(1-hsb.b/100)*SQ,cur=hsbToHex(hsb.h,hsb.s,hsb.b);
-  return (
-    <div ref={popRef} style={{position:"relative"}}>
-      <button onClick={()=>setOpen(v=>!v)} title="Color wheel"
-        style={{width:24,height:24,borderRadius:999,background:"conic-gradient(red,yellow,lime,cyan,blue,magenta,red)",border:`2px solid ${open?"#333":"rgba(0,0,0,.2)"}`,cursor:"pointer",padding:0,flexShrink:0}} />
-      {open && (
-        <div className="pop" style={{position:"absolute",bottom:32,left:0,zIndex:30,background:"var(--hs-card-bg)",borderRadius:20,padding:16,boxShadow:"0 20px 50px -10px rgba(0,0,0,.4)",border:"1px solid var(--hs-card-border)",backdropFilter:"blur(8px)"}}>
-          <div style={{position:"relative",width:SIZE,height:SIZE,margin:"0 auto"}}>
-            <canvas ref={wheelRef} style={{borderRadius:"50%",cursor:"crosshair",display:"block",touchAction:"none"}}
-              onPointerDown={e=>{draggingW.current=true;e.currentTarget.setPointerCapture(e.pointerId);onWheel(e);}}
-              onPointerMove={e=>{if(draggingW.current)onWheel(e);}} onPointerUp={()=>{draggingW.current=false;}} />
-            <div style={{position:"absolute",width:16,height:16,borderRadius:"50%",border:"2.5px solid #fff",boxShadow:"0 0 0 1.5px rgba(0,0,0,.4)",background:`hsl(${hsb.h},100%,50%)`,left:hueX-8,top:hueY-8,pointerEvents:"none"}} />
-          </div>
-          <div style={{position:"relative",width:SQ,height:SQ,margin:"10px auto 0",borderRadius:10,overflow:"hidden"}}>
-            <canvas ref={sqRef} style={{display:"block",cursor:"crosshair",borderRadius:10,touchAction:"none"}}
-              onPointerDown={e=>{draggingSq.current=true;e.currentTarget.setPointerCapture(e.pointerId);onSq(e);}}
-              onPointerMove={e=>{if(draggingSq.current)onSq(e);}} onPointerUp={()=>{draggingSq.current=false;}} />
-            <div style={{position:"absolute",width:14,height:14,borderRadius:"50%",border:"2.5px solid #fff",boxShadow:"0 0 0 1.5px rgba(0,0,0,.4)",background:cur,left:sqX-7,top:sqY-7,pointerEvents:"none"}} />
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
-            <div style={{width:34,height:34,borderRadius:10,background:cur,border:"1.5px solid var(--hs-line)",flexShrink:0}} />
-            <button onClick={()=>{onChange(cur);setOpen(false);}} style={{flex:1,border:"none",borderRadius:10,padding:"9px",background:C.blue,color:"#fff",fontWeight:800,fontSize:13,cursor:"pointer"}}>Use color</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* canvases */
 function Canvas({ strokes, editable, hidden, live, onStroke, color, height=230, palette }) {
-  const RC = useC(); // real hex values for canvas ops
   const ref = useRef(null), drawing = useRef(false), cur = useRef(null);
   const [brush, setBrush] = useState(color);
-  const [brushSize, setBrushSize] = useState(3.4);
-  const [eraser, setEraser] = useState(false);
-  const snapshots = useRef([]);
-  const redoSnaps = useRef([]);
-  const prevStrokeCount = useRef(0);
-
-  useEffect(() => {
-    const c = ref.current; if (!c || drawing.current) return;
-    const x = c.getContext("2d");
-    const newCount = strokes?.length || 0;
-    const prevCount = prevStrokeCount.current;
-
-    if (newCount < prevCount || newCount === 0) {
-      x.fillStyle=RC.paper; x.fillRect(0,0,c.width,c.height);
-      if (newCount > 0) drawStrokes(x, strokes, 1);
-      snapshots.current = []; redoSnaps.current = [];
-    } else if (newCount > prevCount && !editable) {
-      drawStrokes(x, strokes.slice(prevCount), 1);
-    } else if (newCount === prevCount && newCount > 0 && !editable) {
-      x.fillStyle=RC.paper; x.fillRect(0,0,c.width,c.height); drawStrokes(x, strokes, 1);
-    } else if (editable && newCount === 0) {
-      x.fillStyle=RC.paper; x.fillRect(0,0,c.width,c.height);
-    }
-    prevStrokeCount.current = newCount;
-  }, [strokes]); // eslint-disable-line
-
+  useEffect(() => { const c = ref.current; if (!c || drawing.current) return; const x = c.getContext("2d"); x.fillStyle=C.paper; x.fillRect(0,0,c.width,c.height); drawStrokes(x, strokes, 1); }, [strokes]);
   const pos = (e) => { const r = ref.current.getBoundingClientRect(); return { x: Math.round((e.clientX-r.left)*(320/r.width)), y: Math.round((e.clientY-r.top)*(height/r.height)) }; };
-
-  const down = (e) => {
-    if (!editable) return; drawing.current=true;
-    const p = pos(e);
-    cur.current = { color: eraser ? RC.paper : brush, w: eraser ? brushSize*3 : brushSize, pts: [[p.x,p.y]] };
-    ref.current.setPointerCapture?.(e.pointerId);
-  };
-
-  const move = (e) => {
-    if (!editable||!drawing.current) return; e.preventDefault();
-    const p=pos(e), x=ref.current.getContext("2d"), l=cur.current.pts.at(-1);
-    x.strokeStyle=cur.current.color; x.lineWidth=cur.current.w; x.lineCap="round"; x.lineJoin="round";
-    x.beginPath(); x.moveTo(l[0],l[1]); x.lineTo(p.x,p.y); x.stroke();
-    cur.current.pts.push([p.x,p.y]);
-  };
-
-  const up = () => {
-    if (!editable||!drawing.current) return; drawing.current=false;
-    if (cur.current?.pts.length) {
-      const c = ref.current;
-      snapshots.current.push(c.getContext("2d").getImageData(0,0,c.width,c.height));
-      redoSnaps.current = [];
-      onStroke?.(cur.current);
-    }
-    cur.current = null;
-  };
-
-  const handleUndo = () => {
-    if (!snapshots.current.length) return;
-    redoSnaps.current.push(snapshots.current.pop());
-    const c = ref.current; const x = c.getContext("2d");
-    if (snapshots.current.length) { x.putImageData(snapshots.current[snapshots.current.length-1], 0, 0); }
-    else { x.fillStyle=RC.paper; x.fillRect(0,0,c.width,c.height); drawStrokes(x, strokes, 1); }
-  };
-
-  const handleRedo = () => {
-    if (!redoSnaps.current.length) return;
-    const snap = redoSnaps.current.pop(); snapshots.current.push(snap);
-    ref.current.getContext("2d").putImageData(snap, 0, 0);
-  };
-
-  // Preset swatches use real hex values so they work as canvas strokeStyle
-  const PRESET_COLORS = [color, RC.ink, RC.sage, RC.gold, RC.rose, RC.blue];
-  const SIZES = [[2,"S"],[3.4,"M"],[7,"L"]];
-
+  const down = (e) => { if(!editable) return; drawing.current=true; const p=pos(e); cur.current={color:brush,pts:[[p.x,p.y]]}; ref.current.setPointerCapture?.(e.pointerId); };
+  const move = (e) => { if(!editable||!drawing.current) return; e.preventDefault(); const p=pos(e),x=ref.current.getContext("2d"),l=cur.current.pts.at(-1); x.strokeStyle=brush;x.lineWidth=3.4;x.lineCap="round";x.lineJoin="round";x.beginPath();x.moveTo(l[0],l[1]);x.lineTo(p.x,p.y);x.stroke(); cur.current.pts.push([p.x,p.y]); };
+  const up = () => { if(!editable||!drawing.current) return; drawing.current=false; if(cur.current?.pts.length) onStroke?.(cur.current); cur.current=null; };
+  const colors = [color, C.ink, C.sage, C.gold, C.rose, C.blue];
   return (
     <div>
-      <div style={{ position:"relative", borderRadius:16, overflow:"hidden", border:`2px solid ${eraser?RC.inkSoft:color}`, boxShadow:`0 8px 20px -14px ${color}` }}>
-        <canvas ref={ref} width={320} height={height} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
-          style={{ width:"100%", display:"block", touchAction:"none", cursor:editable?(eraser?"cell":"crosshair"):"default" }} />
-        {hidden && <div style={{ position:"absolute", inset:0, backdropFilter:"blur(8px)", background:`${RC.cream}e6`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4 }}><Icon name="brush" size={26} color={color} /><span style={{ fontFamily:"'Caveat',cursive", fontSize:19, color }}>hidden until reveal</span></div>}
+      <div style={{ position:"relative", borderRadius:16, overflow:"hidden", border:`2px solid ${color}`, boxShadow:`0 8px 20px -14px ${color}` }}>
+        <canvas ref={ref} width={320} height={height} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} style={{ width:"100%", display:"block", touchAction:"none", cursor:editable?"crosshair":"default" }} />
+        {hidden && <div style={{ position:"absolute", inset:0, backdropFilter:"blur(8px)", background:`${C.cream}e6`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4 }}><Icon name="brush" size={26} color={color} /><span style={{ fontFamily:"'Caveat',cursive", fontSize:19, color }}>hidden until reveal</span></div>}
         {live && <span style={{ position:"absolute", top:8, right:8, width:8, height:8, borderRadius:999, background:"#E05a5a" }} />}
       </div>
       {palette && editable && (
-        <div style={{ marginTop:8, display:"flex", flexDirection:"column", gap:6 }}>
-          <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
-            <ColorWheel color={brush} onChange={(c)=>{ setBrush(c); setEraser(false); }} />
-            {PRESET_COLORS.map((p)=>(
-              <button key={p} className="press" onClick={()=>{ setBrush(p); setEraser(false); }}
-                style={{ width:20, height:20, borderRadius:999, cursor:"pointer", background:p, border:!eraser&&brush===p?`2px solid ${RC.ink}`:`1px solid ${RC.line}` }} />
-            ))}
-            <button className="press" onClick={()=>setEraser(v=>!v)}
-              style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"3px 9px", borderRadius:999, border:`1.5px solid ${eraser?RC.ink:RC.line}`, background:eraser?RC.ink:"transparent", cursor:"pointer" }}>
-              <Icon name="eraser" size={13} color={eraser?"#fff":RC.inkSoft} />
-              <span style={{ fontSize:11, fontWeight:700, color:eraser?"#fff":RC.inkSoft }}>erase</span>
-            </button>
-          </div>
-          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-            {SIZES.map(([sz,lbl])=>(
-              <button key={sz} className="press" onClick={()=>{ setBrushSize(sz); setEraser(false); }}
-                style={{ width:30, height:30, borderRadius:8, border:`1.5px solid ${brushSize===sz&&!eraser?color:RC.line}`, background:brushSize===sz&&!eraser?`${color}22`:"transparent", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                <div style={{ width:sz*2, height:sz*2, borderRadius:999, background:color }} />
-              </button>
-            ))}
-            <div style={{ flex:1 }} />
-            <button className="press" onClick={handleUndo}
-              style={{ padding:"4px 10px", borderRadius:8, border:`1.5px solid ${RC.line}`, background:"transparent", cursor:"pointer", fontSize:13, fontWeight:700, color:RC.inkSoft }}>↩ undo</button>
-            <button className="press" onClick={handleRedo}
-              style={{ padding:"4px 10px", borderRadius:8, border:`1.5px solid ${RC.line}`, background:"transparent", cursor:"pointer", fontSize:13, fontWeight:700, color:RC.inkSoft }}>↪ redo</button>
-          </div>
+        <div style={{ display:"flex", gap:7, marginTop:8, alignItems:"center" }}>
+          <Icon name="palette" size={16} color={C.inkSoft} />
+          {colors.map((p)=><button key={p} className="press" onClick={()=>setBrush(p)} style={{ width:20, height:20, borderRadius:999, cursor:"pointer", background:p, border:brush===p?`2px solid ${C.ink}`:`1px solid ${C.line}` }} />)}
         </div>
       )}
     </div>
@@ -600,4 +405,108 @@ function Mini({ strokes }) {
   const ref = useRef(null);
   useEffect(()=>{ const c=ref.current,x=c.getContext("2d"); x.fillStyle=C.paper; x.fillRect(0,0,c.width,c.height); drawStrokes(x, strokes, 1); },[strokes]);
   return <canvas ref={ref} width={320} height={230} style={{ width:"100%", display:"block", borderRadius:10, marginTop:4 }} />;
+}
+
+/* ===================== LOCAL (one device, together) =====================
+   Two cozy couch modes:
+   • Doodle together — one canvas, each person draws in their color; saving
+     splits strokes by color owner so the gallery keepsake stays his|hers.
+   • Guess my sketch — pass-and-play Pictionary: the artist holds a button to
+     peek the secret word (partner looks away), draws, "they got it!" swaps.
+*/
+function LocalDrawing({ room, names }) {
+  const { state, commit, saveDrawingDirect } = room;
+  const d = state.d;
+  const [sub, setSub] = useState("doodle"); // doodle | guess
+  const [who, setWho] = useState("him");    // active pen / artist
+  const [himS, setHimS] = useState([]);
+  const [herS, setHerS] = useState([]);
+  const [peek, setPeek] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const LOCAL_PROMPTS = {
+    doodle: ["our dream date", "what home feels like", "us as tiny animals", "tonight, but as a doodle"],
+    guess: ["a memory we share", "my favorite thing about you", "our first date", "something in this room", "your happy place"],
+  };
+  const prompt = d.prompt || LOCAL_PROMPTS[sub][0];
+  const setPrompt = (p) => commit((s) => { s.d.prompt = p; s.d.round = (s.d.round || 1) + 1; return s; });
+
+  const newRound = (swap) => {
+    setHimS([]); setHerS([]); setSaved(false); setPeek(false);
+    if (swap) setWho((w) => (w === "him" ? "her" : "him"));
+    setPrompt(pick(LOCAL_PROMPTS[sub]));
+  };
+  const switchSub = (id) => { setSub(id); setHimS([]); setHerS([]); setSaved(false); setPeek(false); commit((s) => { s.d.prompt = pick(LOCAL_PROMPTS[id]); s.d.sub = id === "doodle" ? "together" : "pictionary"; s.d.round = (s.d.round || 1) + 1; return s; }); };
+
+  const activeStrokes = who === "him" ? himS : herS;
+  const addStroke = (st) => (who === "him" ? setHimS((p) => [...p, st]) : setHerS((p) => [...p, st]));
+  const all = [...himS, ...herS];
+  const nameOf = (s) => names?.[s] || (s === "him" ? "blue" : "rose");
+
+  const save = async () => { await saveDrawingDirect(himS, herS); setSaved(true); };
+
+  const WhoChips = ({ label }) => (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 12 }}>
+      <span style={{ fontFamily: "'Caveat',cursive", fontSize: 17, color: C.inkSoft }}>{label}</span>
+      {["him", "her"].map((s) => (
+        <button key={s} className="press" onClick={() => setWho(s)} style={{
+          border: `1.5px solid ${who === s ? col(s) : C.line}`, background: who === s ? col(s) : "#fff",
+          color: who === s ? "#fff" : C.ink, borderRadius: 999, padding: "6px 14px", fontWeight: 800, fontSize: 12.5,
+          cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <Icon name={s === "him" ? "wave" : "lotus"} size={14} color={who === s ? "#fff" : col(s)} />{nameOf(s)}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <div style={card({ padding: 20 })}>
+      <div style={{ display: "flex", gap: 8, background: "rgba(255,255,255,.55)", borderRadius: 16, padding: 6, marginBottom: 16 }}>
+        {[["doodle", "brush", "Doodle together"], ["guess", "eye", "Guess my sketch"]].map(([id, ic, l]) => (
+          <button key={id} className="press" onClick={() => switchSub(id)} style={{ flex: 1, border: "none", borderRadius: 12, padding: "11px", cursor: "pointer", background: sub === id ? "#fff" : "transparent", color: sub === id ? C.ink : C.inkSoft, fontWeight: 800, fontSize: 14, boxShadow: sub === id ? "0 8px 18px -12px rgba(0,0,0,.5)" : "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+            <Icon name={ic} size={16} color={sub === id ? C.ink : C.inkSoft} /> {l}
+          </button>
+        ))}
+      </div>
+
+      {sub === "doodle" ? (
+        <>
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", justifyContent: "center", marginBottom: 10 }}>
+            {LOCAL_PROMPTS.doodle.map((p) => (
+              <button key={p} className="press" onClick={() => { setHimS([]); setHerS([]); setSaved(false); setPrompt(p); }} style={pill(prompt === p ? C.sage : "rgba(255,255,255,.7)", prompt === p)}>{p}</button>
+            ))}
+          </div>
+          <Head label="draw it together:" prompt={prompt} />
+          <WhoChips label="whose pen?" />
+          <Canvas color={col(who)} editable strokes={all} onStroke={addStroke} palette height={280} />
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <button className="press" onClick={save} disabled={saved || all.length === 0} style={btn(saved ? C.line : grad, { flex: 2, cursor: saved ? "default" : "pointer" })}>
+              <Icon name={saved ? "check" : "frame"} size={17} color="#fff" /> {saved ? "saved to gallery" : "save to gallery"}
+            </button>
+            <button className="press" onClick={() => newRound(false)} style={btn(C.sage, { flex: 1 })}><Icon name="refresh" size={17} color="#fff" /> new</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <WhoChips label="the artist is" />
+          <div style={{ textAlign: "center", marginBottom: 12 }}>
+            <div style={{ fontFamily: "'Caveat',cursive", fontSize: 18, color: C.inkSoft }}>
+              {nameOf(who === "him" ? "her" : "him")}, look away while {nameOf(who)} peeks 👀
+            </div>
+            <button className="press"
+              onPointerDown={() => setPeek(true)} onPointerUp={() => setPeek(false)} onPointerLeave={() => setPeek(false)}
+              style={{ marginTop: 6, border: `1.5px dashed ${col(who)}`, background: peek ? col(who) : "#fff", color: peek ? "#fff" : col(who), borderRadius: 13, padding: "10px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", userSelect: "none", WebkitUserSelect: "none" }}>
+              {peek ? prompt : "hold to peek the word"}
+            </button>
+          </div>
+          <Canvas color={col(who)} editable strokes={activeStrokes} onStroke={addStroke} palette />
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <button className="press" onClick={() => newRound(true)} style={btn(grad, { flex: 1 })}>
+              <Icon name="check" size={18} color="#fff" /> they got it — swap!
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }

@@ -24,6 +24,8 @@ function blankState() {
   };
 }
 
+function isObj(v) { return v != null && typeof v === "object" && !Array.isArray(v); }
+
 export function useRoom(roomName, joinCode, side, user) {
   const [roomId, setRoomId] = useState(null);
   const [state, setState] = useState(blankState());
@@ -38,17 +40,33 @@ export function useRoom(roomName, joinCode, side, user) {
   const clientId = useRef(user?.id || Math.random().toString(36).slice(2));
   useEffect(() => { stateRef.current = state; }, [state]);
 
+  // Defensive merge: a malformed or wrong-typed nested field (a bad AI response
+  // that got saved, an old shape from a previous version, etc.) must never be
+  // able to crash a downstream render. Anything that doesn't look like what we
+  // expect is quietly replaced with a safe default instead of passed through.
   const applyRow = useCallback((row) => {
     if (!row) return;
-    setState((prev) => ({
-      ...prev,
-      mode: row.mode ?? prev.mode,
-      feel: row.feel ?? prev.feel,
-      q: { ...prev.q, ...(row.q_state || {}) },
-      d: { ...prev.d, ...(row.d_state || {}) },
-      c: { ...prev.c, ...(row.c_state || {}) },
-      score: row.score || prev.score,
-    }));
+    setState((prev) => {
+      const q = isObj(row.q_state) ? row.q_state : {};
+      const d = isObj(row.d_state) ? row.d_state : {};
+      const c = isObj(row.c_state) ? row.c_state : {};
+      return {
+        ...prev,
+        mode: row.mode ?? prev.mode,
+        feel: row.feel ?? prev.feel,
+        q: {
+          ...prev.q, ...q,
+          picks: isObj(q.picks) ? q.picks : (prev.q.picks || { him: null, her: null }),
+          round: isObj(q.round) ? q.round : prev.q.round,
+        },
+        d: {
+          ...prev.d, ...d,
+          chain: Array.isArray(d.chain) ? d.chain : (prev.d.chain || []),
+        },
+        c: { ...prev.c, ...c },
+        score: isObj(row.score) ? row.score : prev.score,
+      };
+    });
   }, []);
 
   /* join + subscribe */
@@ -124,6 +142,17 @@ export function useRoom(roomName, joinCode, side, user) {
 
   const addScore = useCallback((him = 0, her = 0) => commit((s) => {
     s.score = { him: (s.score?.him || 0) + him, her: (s.score?.her || 0) + her }; return s;
+  }), [commit]);
+
+  // Lets a crashed section heal itself: resets just that slice of synced
+  // state back to safe defaults (used by ErrorBoundary's "reset" button).
+  // Never touches the other sections, the room, accounts, or saved gallery.
+  const resetSection = useCallback((which) => commit((s) => {
+    const fresh = blankState();
+    if (which === "q") s.q = fresh.q;
+    if (which === "d") s.d = fresh.d;
+    if (which === "c") s.c = fresh.c;
+    return s;
   }), [commit]);
 
   /* live drawing */
@@ -202,7 +231,17 @@ export function useRoom(roomName, joinCode, side, user) {
     });
   }, [roomId, side, mineStrokes, partnerStrokes]);
 
+  /* local (one-device) mode saves both stroke sets directly */
+  const saveDrawingDirect = useCallback(async (him, her) => {
+    if (!roomId) return;
+    const d = stateRef.current.d;
+    await supabase.from("drawings").insert({
+      room_id: roomId, prompt: d.prompt, sub_mode: d.sub || "together", round: d.round || 1,
+      strokes_him: him || [], strokes_her: her || [],
+    });
+  }, [roomId]);
+
   return { state, commit, online, status, error, clientId: clientId.current,
     mineStrokes, partnerStrokes, pushStroke, clearMine,
-    generateQuestion, saveDrawing, addScore, aiAssist, roomId };
+    generateQuestion, saveDrawing, saveDrawingDirect, addScore, aiAssist, resetSection, roomId };
 }

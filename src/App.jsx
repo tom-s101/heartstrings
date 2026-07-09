@@ -1,29 +1,26 @@
 import { useState } from "react";
-import { useSession, signOut } from "./lib/auth";
-import { Background, C, Icon, DarkToggle } from "./ui";
+import { useSession } from "./lib/auth";
+import { Background, C, Icon } from "./ui";
 import { Auth } from "./components/Auth";
+import { Landing } from "./components/Landing";
 import { Join } from "./components/Join";
 import { Game } from "./components/Game";
+import { PhotoBooth } from "./components/PhotoBooth";
 
-const SESSION_KEY = "hs_room_session";
-
-function loadSaved() {
-  try { return JSON.parse(localStorage.getItem(SESSION_KEY)) || null; } catch { return null; }
-}
-function saveSession(s) {
-  try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch {}
-}
-function clearSession() {
-  try { localStorage.removeItem(SESSION_KEY); } catch {}
-}
+/* ============================================================================
+   App routing:
+   auth → Landing (pick an experience) →
+     • distance → Join (sides) → Game (synced, two devices)
+     • booth    → PhotoBooth (solo or coded room)
+     • together → Join (names) → Game (local: one shared device)
+   ============================================================================ */
 
 export default function App() {
   const { user, loading } = useSession();
-  const [session, setSession] = useState(() => loadSaved());
+  const [section, setSection] = useState(null);  // null | distance | booth | together
+  const [session, setSession] = useState(null);  // { room, code, side, local?, names? }
 
-  const enter = (s) => { saveSession(s); setSession(s); };
-  const leave = () => { clearSession(); setSession(null); };
-  const handleSignOut = () => { clearSession(); signOut(); };
+  const home = () => { setSession(null); setSection(null); };
 
   return (
     <Background>
@@ -33,16 +30,14 @@ export default function App() {
         </div>
       ) : !user ? (
         <Auth />
+      ) : !section ? (
+        <Landing user={user} onPick={setSection} />
+      ) : section === "booth" ? (
+        <PhotoBooth user={user} onBack={home} />
       ) : !session ? (
-        <div style={{ position: "relative", zIndex: 2 }}>
-          <div style={{ position: "absolute", top: 14, right: 16, zIndex: 10 }}><DarkToggle /></div>
-          <Join onEnter={enter} />
-          <div style={{ textAlign: "center", paddingBottom: 24 }}>
-            <button className="press" onClick={handleSignOut} style={{ border: "none", background: "transparent", color: C.inkSoft, fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>sign out</button>
-          </div>
-        </div>
+        <Join mode={section === "together" ? "together" : "distance"} onEnter={setSession} onBack={home} />
       ) : (
-        <Game session={session} user={user} onLeave={leave} onSignOut={handleSignOut} />
+        <Game session={session} user={user} onLeave={home} />
       )}
     </Background>
   );

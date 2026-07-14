@@ -1,5 +1,6 @@
+import { useEffect, useRef } from "react";
 import { useRoom } from "../hooks/useRoom";
-import { C, Icon, Mark } from "../ui";
+import { C, Icon, Mark, useIsMobile } from "../ui";
 import { Questions } from "./Questions";
 import { Drawing } from "./Drawing";
 import { Creative } from "./Creative";
@@ -9,6 +10,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 const ONLINE_WINDOW = 12000;
 
 export function Game({ session, user, onLeave }) {
+  const isMobile = useIsMobile();
   const room = useRoom(session.room, session.code, session.side, user);
   const { state, status, error } = room;
   // Synced tab: whichever section one partner opens (questions, drawing,
@@ -18,7 +20,20 @@ export function Game({ session, user, onLeave }) {
   const setTab = (id) => room.commit((s) => { s.mode = id; return s; });
   const mine = session.side;
   const local = !!session.local;
-  const names = session.names || null; // { him, her } in together mode
+  // Together mode already knows both names at join time. Long-distance mode
+  // only knows YOUR OWN name at join — it gets pushed into synced state
+  // below and merged with whatever your partner set, so both sides converge.
+  const syncedNames = state.c?.names;
+  const names = local
+    ? (session.names || null)
+    : (syncedNames && (syncedNames.him || syncedNames.her) ? syncedNames : null);
+  const pushedName = useRef(false);
+  useEffect(() => {
+    if (!local && session.myName && room.roomId && !pushedName.current) {
+      pushedName.current = true;
+      room.setMyName(session.myName);
+    }
+  }, [local, session.myName, room, room.roomId]);
   const meColor = mine === "him" ? C.blue : C.rose;
   const other = mine === "him" ? "her" : "him";
   const partnerOnline = local || (state.players?.[other]?.lastSeen || 0) > Date.now() - ONLINE_WINDOW;
@@ -58,7 +73,9 @@ export function Game({ session, user, onLeave }) {
               ) : (
                 <>
                   <Icon name={mine === "him" ? "wave" : "lotus"} size={14} color={meColor} />
-                  <span style={{ fontFamily: "'Caveat', cursive", color: C.inkSoft, fontSize: 15 }}>you're the {mine === "him" ? "blue" : "rose"} one</span>
+                  <span style={{ fontFamily: "'Caveat', cursive", color: C.inkSoft, fontSize: 15 }}>
+                    {names?.[mine] ? `${names[mine]} · you're the ${mine === "him" ? "blue" : "rose"} one` : `you're the ${mine === "him" ? "blue" : "rose"} one`}
+                  </span>
                 </>
               )}
             </div>
@@ -81,17 +98,17 @@ export function Game({ session, user, onLeave }) {
         </div>
       </header>
 
-      <nav style={{ display: "flex", gap: 8, padding: "0 18px", maxWidth: 820, margin: "0 auto", width: "100%" }}>
-        <Tab active={tab === "questions"} onClick={() => setTab("questions")} icon="chat" label="Questions" />
-        <Tab active={tab === "drawing"} onClick={() => setTab("drawing")} icon="brush" label="Drawing" />
-        <Tab active={tab === "creative"} onClick={() => setTab("creative")} icon="pen" label="Creative" />
-        <Tab active={tab === "gallery"} onClick={() => setTab("gallery")} icon="frame" label="Gallery" />
-        <button className="press" onClick={onLeave} style={{ marginLeft: "auto", border: "none", background: "transparent", color: C.inkSoft, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+      <nav style={{ display: "flex", gap: 8, padding: "0 18px", maxWidth: 820, margin: "0 auto", width: "100%", overflowX: isMobile ? "auto" : "visible", flexWrap: isMobile ? "nowrap" : "wrap" }}>
+        <Tab active={tab === "questions"} onClick={() => setTab("questions")} icon="chat" label="Questions" compact={isMobile} />
+        <Tab active={tab === "drawing"} onClick={() => setTab("drawing")} icon="brush" label="Drawing" compact={isMobile} />
+        <Tab active={tab === "creative"} onClick={() => setTab("creative")} icon="pen" label="Creative" compact={isMobile} />
+        <Tab active={tab === "gallery"} onClick={() => setTab("gallery")} icon="frame" label="Gallery" compact={isMobile} />
+        <button className="press" onClick={onLeave} style={{ marginLeft: isMobile ? 8 : "auto", flex: "0 0 auto", border: "none", background: "transparent", color: C.inkSoft, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
           <Icon name="close" size={14} color={C.inkSoft} /> leave
         </button>
       </nav>
 
-      <main style={{ maxWidth: 820, margin: "0 auto", padding: "18px 18px 48px", width: "100%" }}>
+      <main style={{ maxWidth: 820, margin: "0 auto", padding: isMobile ? "14px 10px 40px" : "18px 18px 48px", width: "100%" }}>
         {tab === "questions" && (
           <ErrorBoundary onReset={() => room.resetSection("q")}>
             <Questions room={room} mine={mine} local={local} names={names} />
@@ -128,10 +145,10 @@ function Presence({ partnerOnline, status }) {
     </div>
   );
 }
-function Tab({ active, onClick, icon, label }) {
+function Tab({ active, onClick, icon, label, compact = false }) {
   return (
-    <button className="press" onClick={onClick} style={{ border: "none", cursor: "pointer", padding: "11px 16px", borderRadius: "16px 16px 0 0", fontWeight: 800, fontSize: 14, color: active ? C.ink : C.inkSoft, background: active ? "rgba(255,255,255,.9)" : "rgba(255,255,255,.4)", boxShadow: active ? "0 -3px 12px -7px rgba(0,0,0,.3)" : "none", display: "flex", alignItems: "center", gap: 7 }}>
-      <Icon name={icon} size={17} color={active ? C.ink : C.inkSoft} /> {label}
+    <button className="press" onClick={onClick} style={{ flex: "0 0 auto", whiteSpace: "nowrap", border: "none", cursor: "pointer", padding: compact ? "9px 11px" : "11px 16px", borderRadius: "16px 16px 0 0", fontWeight: 800, fontSize: compact ? 12.5 : 14, color: active ? C.ink : C.inkSoft, background: active ? "rgba(255,255,255,.9)" : "rgba(255,255,255,.4)", boxShadow: active ? "0 -3px 12px -7px rgba(0,0,0,.3)" : "none", display: "flex", alignItems: "center", gap: compact ? 5 : 7 }}>
+      <Icon name={icon} size={compact ? 15 : 17} color={active ? C.ink : C.inkSoft} /> {label}
     </button>
   );
 }

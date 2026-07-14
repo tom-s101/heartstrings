@@ -468,10 +468,13 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, rtc
 
   /* strip download — each shot is already a finished frame (both of you, if
      this is a room booth), so the strip is always a single column. */
+  const [saving, setSaving] = useState(false);
+  const [saveHint, setSaveHint] = useState("");
   const downloadStrip = () => {
+    setSaving(true); setSaveHint("");
     const pad = 26, gap = 14, w = 300, h = Math.round(w * SHOT_H / SHOT_W);
     const W = pad * 2 + w;
-    const capH = 74;
+    const capH = 56;
     const H = pad + shots * (h + gap) + capH;
     const cv = document.createElement("canvas"); cv.width = W * 2; cv.height = H * 2;
     const x = cv.getContext("2d"); x.scale(2, 2);
@@ -490,9 +493,40 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, rtc
       x.fillStyle = frame.accent; x.textAlign = "center";
       x.font = "italic 600 26px Georgia, serif";
       x.fillText(cfg.caption || "us ♡", W / 2, H - capH + 34);
-      if (cfg.date) { x.font = "13px Georgia, serif"; x.fillText(new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }), W / 2, H - capH + 56); }
-      x.font = "11px Georgia, serif"; x.globalAlpha = .65; x.fillText("Heartstrings booth", W / 2, H - 10); x.globalAlpha = 1;
-      const a = document.createElement("a"); a.href = cv.toDataURL("image/png"); a.download = `heartstrings-booth-${Date.now()}.png`; a.click();
+      if (cfg.date) { x.font = "13px Georgia, serif"; x.fillText(new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }), W / 2, H - capH + 54); }
+
+      const filename = `heartstrings-booth-${Date.now()}.png`;
+      // Mobile browsers (iOS Safari especially) mostly ignore/silently fail
+      // an <a download> click on a data URL — nothing visibly happens. A real
+      // Blob + the Web Share sheet (Save Image is right there) is the
+      // reliable path on phones; desktop keeps the classic direct download.
+      cv.toBlob(async (blob) => {
+        if (!blob) { setSaving(false); setSaveHint("couldn't create the image — try again"); return; }
+        const file = new File([blob], filename, { type: "image/png" });
+        try {
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: "Our photo strip" });
+            setSaving(false); setSaveHint("");
+            return;
+          }
+        } catch (e) {
+          // user cancelled the share sheet — not an error, just stop quietly
+          if (e && e.name === "AbortError") { setSaving(false); return; }
+        }
+        const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent || "");
+        const url = URL.createObjectURL(blob);
+        if (!isMobile) {
+          const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+          setSaving(false);
+        } else {
+          // Last-resort mobile fallback: open the image full-screen so a
+          // long-press → "Save Image" always works, even without Share API.
+          window.open(url, "_blank");
+          setSaveHint("opened in a new tab — press and hold the photo, then \"Save Image\"");
+          setSaving(false);
+        }
+      }, "image/png");
     })();
   };
 
@@ -576,15 +610,18 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, rtc
             </button>
           ) : (
             <>
-              <button className="press" onClick={downloadStrip} style={primary(true, { flex: 2 })}>
-                <Icon name="download" size={18} color="#fff" /> save the strip
+              <button className="press" disabled={saving} onClick={downloadStrip} style={primary(!saving, { flex: 2, opacity: saving ? .7 : 1 })}>
+                <Icon name="download" size={18} color="#fff" /> {saving ? "saving…" : "save the strip"}
               </button>
-              <button className="press" onClick={() => { setMine([]); setPhase("idle"); }} style={ghost({ flex: 1 })}>
+              <button className="press" onClick={() => { setMine([]); setPhase("idle"); setSaveHint(""); }} style={ghost({ flex: 1 })}>
                 <Icon name="refresh" size={16} color={C.ink} /> retake
               </button>
             </>
           )}
         </div>
+        {saveHint && (
+          <p style={{ textAlign: "center", marginTop: 10, fontSize: 12.5, color: C.sageDeep, fontWeight: 700 }}>{saveHint}</p>
+        )}
         <div style={{ textAlign: "center", marginTop: 10 }}>
           <button className="press" onClick={onDone} style={{ border: "none", background: "transparent", color: C.inkSoft, fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>back to strip design</button>
         </div>

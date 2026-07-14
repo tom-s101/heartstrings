@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { C, Icon, Mark, card, primary, Label, Input, Hint } from "../ui";
+import { C, Icon, Mark, card, primary, Label, Input, Hint, useIsMobile } from "../ui";
 
 /* ============================================================================
    Join — two flavors:
@@ -11,15 +11,17 @@ import { C, Icon, Mark, card, primary, Label, Input, Hint } from "../ui";
    ============================================================================ */
 
 export function Join({ onEnter, mode = "distance", user, onBack }) {
+  const isMobile = useIsMobile();
   const together = mode === "together";
   const [room, setRoom] = useState("");
   const [code, setCode] = useState("");
   const [side, setSide] = useState(together ? "him" : null);
   const [nameHim, setNameHim] = useState("");
   const [nameHer, setNameHer] = useState("");
+  const [myName, setMyName] = useState("");
   const can = together
     ? !!(nameHim.trim() && nameHer.trim())
-    : room.trim().length > 1 && code.trim().length >= 4 && side;
+    : room.trim().length > 1 && code.trim().length >= 4 && side && myName.trim().length > 0;
 
   return (
     <div style={{ minHeight: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "34px 20px", position: "relative", zIndex: 2 }}>
@@ -55,7 +57,7 @@ export function Join({ onEnter, mode = "distance", user, onBack }) {
         {together ? (
           <>
             <Label style={{ marginTop: 20 }}>who's here tonight</Label>
-            <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 12, marginTop: 8 }}>
               <NameField icon="wave" color={C.blue} value={nameHim} onChange={setNameHim} placeholder="first name" />
               <NameField icon="lotus" color={C.rose} value={nameHer} onChange={setNameHer} placeholder="first name" />
             </div>
@@ -68,6 +70,9 @@ export function Join({ onEnter, mode = "distance", user, onBack }) {
               <SideCard active={side === "him"} onClick={() => setSide("him")} icon="wave" color={C.blue} deep={C.blueDeep} light={C.blueLight} label="His side" sub="the deep blue" />
               <SideCard active={side === "her"} onClick={() => setSide("her")} icon="lotus" color={C.rose} deep={C.roseDeep} light={C.roseLight} label="Her side" sub="the soft rose" />
             </div>
+            <Label style={{ marginTop: 16 }}>your first name</Label>
+            <NameField icon={side === "her" ? "lotus" : "wave"} color={side === "her" ? C.rose : C.blue} value={myName} onChange={setMyName} placeholder="what should we call you?" />
+            <Hint style={{ marginTop: 7 }}>Shows up for your partner too, so the game says "Sam's turn" instead of just "his"/"her".</Hint>
           </>
         )}
 
@@ -79,7 +84,7 @@ export function Join({ onEnter, mode = "distance", user, onBack }) {
             room: `together-${user?.id || "local"}`, code: (user?.id || "local-together").replace(/-/g, "").slice(0, 24) || "together",
             side: "him", local: true, names: { him: nameHim.trim(), her: nameHer.trim() },
           } : {
-            room: room.trim().toLowerCase(), code: code.trim(), side, local: false, names: null,
+            room: room.trim().toLowerCase(), code: code.trim(), side, local: false, names: null, myName: myName.trim(),
           })}
           style={primary(can, { marginTop: 24, width: "100%" })}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>step inside together <Icon name="arrow" size={18} color={can ? "#fff" : C.inkSoft} /></span>

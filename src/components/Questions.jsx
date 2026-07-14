@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { C, Icon, card, qText, Chip, Primary, Dealing, fate, linkBtn } from "../ui";
+import { C, Icon, card, qText, Chip, Primary, Dealing, fate, linkBtn, useIsMobile } from "../ui";
 
 const CATS = [
   { id: "deep", label: "Deep", icon: "moon" }, { id: "silly", label: "Silly", icon: "spark" },
@@ -131,7 +131,7 @@ export function Questions({ room, mine, local = false, names = null }) {
             {CATS.map((c) => <Chip key={c.id} active={q.sel === c.id} color={meColor} icon={c.icon} label={c.label} onClick={() => setSel(c.id)} />)}
           </div>
           <ThemeInput value={q.theme} onChange={setTheme} />
-          <Card count={q.count} sel={q.sel} icon={CATS.find((c) => c.id === q.sel)?.icon} generating={q.generating} genMine={q.genBy === room.clientId}>
+          <Card count={q.count} sel={q.sel} icon={CATS.find((c) => c.id === q.sel)?.icon} generating={q.generating} genMine={q.genBy === room.clientId} mine={mine} names={names}>
             {looksGarbled(q.round?.prompt)
               ? <GlitchNotice onRetry={next} />
               : <p style={qText}>{q.round?.prompt}</p>}
@@ -156,7 +156,7 @@ export function Questions({ room, mine, local = false, names = null }) {
             {VIBES.map((v) => <Chip key={v.id} active={q.vibe === v.id} color={C.sage} icon={v.icon} label={v.label} onClick={() => setVibe(v.id)} small />)}
           </div>
           <ThemeInput value={q.theme} onChange={setTheme} />
-          <Card count={q.count} sel={q.sel} icon={FORMATS.find((f) => f.id === q.sel)?.icon} name={FORMATS.find((f) => f.id === q.sel)?.name} generating={q.generating} genMine={q.genBy === room.clientId}>
+          <Card count={q.count} sel={q.sel} icon={FORMATS.find((f) => f.id === q.sel)?.icon} name={FORMATS.find((f) => f.id === q.sel)?.name} generating={q.generating} genMine={q.genBy === room.clientId} mine={mine} names={names}>
             {q.round && looksGarbled(q.round.prompt) && q.round.shape !== "truthDare"
               ? <GlitchNotice onRetry={next} />
               : q.round && SHAPE_FOR[q.sel] && q.round.shape !== SHAPE_FOR[q.sel]
@@ -198,13 +198,16 @@ function StaleNotice({ onRetry }) {
   );
 }
 
-function Card({ count, icon, name, generating, genMine, children }) {
+function Card({ count, icon, name, generating, genMine, mine, names, children }) {
+  const other = mine === "him" ? "her" : "him";
+  const otherName = names?.[other];
+  const dealingText = genMine ? "dealing a fresh card" : (otherName ? `${otherName} is dealing a card` : "your partner is dealing a card");
   return (
     <div key={count} className="pop" style={card({ padding: 22, minHeight: 196, marginBottom: 16 })}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14, color: C.inkSoft }}>
         <Icon name={icon} size={17} color={C.inkSoft} /><span style={{ fontWeight: 800, fontSize: 12.5 }}>{name ? `${name} · ` : ""}#{count}</span>
       </div>
-      {generating ? <div style={{ textAlign: "center", padding: "26px 0" }}><Dealing text={genMine ? "dealing a fresh card" : "your partner is dealing a card"} /></div> : children}
+      {generating ? <div style={{ textAlign: "center", padding: "26px 0" }}><Dealing text={dealingText} /></div> : children}
     </div>
   );
 }
@@ -229,8 +232,8 @@ function RoundCard({ round, picks, mine, setPick, setSlider, setSpectrum, td, se
   if (shape === "choice2") return (
     <div>
       <p style={{ ...qText, marginBottom: 16 }}>{round.prompt}</p>
-      <div style={{ display: "flex", gap: 10 }}>
-        {[0, 1].map((i) => <div key={i} style={{ flex: 1, borderRadius: 16, padding: "16px 12px", textAlign: "center", background: i === 0 ? C.blueLight : C.roseLight, fontFamily: "'Fraunces',serif", fontSize: 16, fontWeight: 500 }}>{round.options?.[i]}</div>)}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        {[0, 1].map((i) => <div key={i} style={{ flex: "1 1 130px", borderRadius: 16, padding: "16px 12px", textAlign: "center", background: i === 0 ? C.blueLight : C.roseLight, fontFamily: "'Fraunces',serif", fontSize: 16, fontWeight: 500 }}>{round.options?.[i]}</div>)}
       </div>
       <PickArea options={[{ k: "0", label: round.options?.[0] }, { k: "1", label: round.options?.[1] }]} {...pa} />
     </div>
@@ -448,6 +451,7 @@ function SliderInput({ label, color, onLock }) {
 // Most Likely To (him<->both<->her) — one shared bar both partners' markers
 // land on, instead of each tapping separate buttons in separate columns.
 function Spectrum({ zones, picks, mine, setSpectrum, local, names }) {
+  const isMobile = useIsMobile();
   const both = picks?.him != null && picks?.her != null;
   const activeSide = local ? (picks?.him == null ? "him" : picks?.her == null ? "her" : null) : mine;
   const alreadyMine = !local && picks?.[mine] != null;
@@ -469,15 +473,15 @@ function Spectrum({ zones, picks, mine, setSpectrum, local, names }) {
             <button key={i} disabled={!canPick} className={canPick ? "press" : ""}
               onClick={canPick ? () => setSpectrum(pickerSide, i) : undefined}
               style={{
-                flex: 1, minHeight: 62, border: "none", borderRight: i < zones.length - 1 ? `1px solid ${C.line}` : "none",
+                flex: 1, minHeight: isMobile ? 52 : 62, border: "none", borderRight: i < zones.length - 1 ? `1px solid ${C.line}` : "none",
                 background: i % 2 === 0 ? "#fff" : "rgba(0,0,0,.02)", cursor: canPick ? "pointer" : "default",
-                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: "6px 2px",
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: isMobile ? "4px 1px" : "6px 2px",
               }}>
               <div style={{ display: "flex", gap: 3, minHeight: 15 }}>
-                {himHere && <Icon name="wave" size={14} color={C.blue} />}
-                {herHere && <Icon name="lotus" size={14} color={C.rose} />}
+                {himHere && <Icon name="wave" size={isMobile ? 11 : 14} color={C.blue} />}
+                {herHere && <Icon name="lotus" size={isMobile ? 11 : 14} color={C.rose} />}
               </div>
-              <span style={{ fontSize: 9, fontWeight: 800, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>{label}</span>
+              <span style={{ fontSize: isMobile ? 7.5 : 9, fontWeight: 800, color: C.inkSoft, textAlign: "center", lineHeight: 1.15 }}>{label}</span>
             </button>
           );
         })}
@@ -499,6 +503,7 @@ function Spectrum({ zones, picks, mine, setSpectrum, local, names }) {
 
 // Never Have I Ever: big circular icon buttons instead of pill buttons.
 function HandRaise({ picks, mine, setPick, local, names }) {
+  const isMobile = useIsMobile();
   const both = picks?.him != null && picks?.her != null;
   const OPTS = [{ k: "have", icon: "thumbUp", c: C.sageDeep, label: "I have" }, { k: "never", icon: "thumbDown", c: C.roseDeep, label: "never" }];
   const Col = ({ side }) => {
@@ -532,7 +537,7 @@ function HandRaise({ picks, mine, setPick, local, names }) {
   };
   return (
     <div>
-      <div style={{ display: "flex", gap: 14 }}><Col side="him" /><Col side="her" /></div>
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 12 : 14 }}><Col side="him" /><Col side="her" /></div>
       {both && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 14 }}>
           <Icon name={picks.him === picks.her ? "twoHearts" : "split"} size={20} color={picks.him === picks.her ? C.sage : C.gold} />
@@ -546,27 +551,33 @@ function HandRaise({ picks, mine, setPick, local, names }) {
 // How Well You Know Me: free-text answer (target) vs free-text guess
 // (guesser) instead of picking from options — genuinely different input mode.
 function GuessArea({ target, guesser, picks, mine, setPick, local, names }) {
+  const isMobile = useIsMobile();
   const both = picks?.[target] != null && picks?.[guesser] != null;
   const Col = ({ side }) => {
     const isTarget = side === target;
-    const canType = local || side === mine;
+    const already = picks?.[side] != null;
+    // You can type until YOU'VE submitted — being "your own side" shouldn't
+    // instantly reveal a blank box before you've actually answered.
+    const canType = (local || side === mine) && !already;
     const val = picks?.[side] || "";
-    const revealed = local || side === mine || both;
+    const revealed = local || (side === mine && already) || both;
     const label = names?.[side] || (side === "him" ? "his" : "her");
     return (
       <div style={{ flex: 1 }}>
         <div style={{ textAlign: "center", fontFamily: "'Caveat',cursive", fontSize: 15, color: side === "him" ? C.blueDeep : C.roseDeep, marginBottom: 6 }}>
           {label}{!local && side === mine ? " (you)" : ""} — {isTarget ? "answer for real" : "your guess"}
         </div>
-        {revealed ? (
+        {canType ? (
+          <GuessInput value={val} onSubmit={(t) => setPick(side, t)} />
+        ) : revealed ? (
           <div style={{ minHeight: 46, borderRadius: 12, border: `1.5px solid ${C.line}`, padding: "10px 10px", fontSize: 13.5, fontWeight: 600, background: "#fff", textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center" }}>
             {val || "…"}
           </div>
-        ) : canType ? (
-          <GuessInput value={val} onSubmit={(t) => setPick(side, t)} />
         ) : (
           <div style={{ minHeight: 46, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ fontFamily: "'Caveat',cursive", fontSize: 15, color: C.inkSoft }}>waiting…</span>
+            <span style={{ fontFamily: "'Caveat',cursive", fontSize: 15, color: C.inkSoft }}>
+              {already ? "answered — hidden until you both do" : "waiting…"}
+            </span>
           </div>
         )}
       </div>
@@ -574,7 +585,7 @@ function GuessArea({ target, guesser, picks, mine, setPick, local, names }) {
   };
   return (
     <div style={{ marginTop: 4 }}>
-      <div style={{ display: "flex", gap: 14 }}>
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 12 : 14 }}>
         <Col side="him" /><Col side="her" />
       </div>
       {both && (
@@ -600,6 +611,7 @@ function GuessInput({ value, onSubmit }) {
 }
 
 function PickArea({ options, picks, mine, setPick, correctKey = null, hideMatchMsg = false, local = false, names = null, big = false }) {
+  const isMobile = useIsMobile();
   const both = picks?.him && picks?.her;
   const match = both && picks.him === picks.her;
   const Row = ({ side, color, deep, sideIcon, fallback }) => {
@@ -641,7 +653,7 @@ function PickArea({ options, picks, mine, setPick, correctKey = null, hideMatchM
   };
   return (
     <div style={{ marginTop: 16 }}>
-      <div style={{ display: "flex", gap: 14 }}>
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 18 : 14 }}>
         <Row side="him" color={C.blue} deep={C.blueDeep} sideIcon="wave" fallback="his" />
         <Row side="her" color={C.rose} deep={C.roseDeep} sideIcon="lotus" fallback="her" />
       </div>

@@ -19,7 +19,7 @@ function blankState() {
     d: { sub: "same", prompt: "our dream date", revealed: false, duration: 60, endsAt: null,
          round: 1, artist: "him" },
     score: { him: 0, her: 0 },
-    c: { tool: "story" },
+    c: { tool: "story", names: { him: "", her: "" } },
     players: { him: { lastSeen: 0 }, her: { lastSeen: 0 } },
   };
 }
@@ -206,6 +206,19 @@ export function useRoom(roomName, joinCode, side, user) {
     return round;
   }, [commit, roomId]);
 
+  // Long-distance mode: each device only knows its own first name at join
+  // time, so it's pushed into synced state here (piggybacked on the existing
+  // c_state jsonb column — no migration needed) and merges with whatever the
+  // other side already set, so both clients converge on the same {him, her}.
+  const setMyName = useCallback((name) => {
+    const trimmed = String(name || "").trim();
+    if (!trimmed) return;
+    return commit((s) => {
+      s.c = { ...s.c, names: { ...(s.c?.names || {}), [side]: trimmed } };
+      return s;
+    });
+  }, [commit, side]);
+
   /* generic AI helper for creative tools (server-side key) */
   const aiAssist = useCallback(async (prompt) => {
     try {
@@ -242,6 +255,6 @@ export function useRoom(roomName, joinCode, side, user) {
   }, [roomId]);
 
   return { state, commit, online, status, error, clientId: clientId.current,
-    mineStrokes, partnerStrokes, pushStroke, clearMine,
+    mineStrokes, partnerStrokes, pushStroke, clearMine, setMyName,
     generateQuestion, saveDrawing, saveDrawingDirect, addScore, aiAssist, resetSection, roomId };
 }

@@ -41,11 +41,11 @@ const LAYOUTS = [
 ];
 const SHOT_W = 480, SHOT_H = 360;
 const DEFAULT_CFG = { layout: "strip3", frame: "rose", filter: "none", caption: "us ♡", date: true };
-// public STUN-only config — no TURN server, so this is peer-to-peer over the
-// open internet. Works for the vast majority of home/mobile connections;
-// very restrictive corporate networks or symmetric NATs can still fail, in
-// which case the booth quietly falls back to the low-fps photo relay below.
-const ICE_SERVERS = [
+// Baseline: public STUN only. Used immediately so the call can start right
+// away, then upgraded (see fetchIceServers) to whatever the turn-credentials
+// function returns — TURN servers if METERED_APP_NAME/METERED_API_KEY are
+// configured server-side, otherwise the same STUN-only list.
+const STUN_ONLY = [
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
 ];
@@ -70,7 +70,26 @@ export function PhotoBooth({ user, onBack }) {
   const [partnerFrame, setPartnerFrame] = useState(null); // last low-fps snapshot of their camera (fallback)
   const [shutterTick, setShutterTick] = useState(0);
   const [rtcSignal, setRtcSignal] = useState(null); // latest WebRTC offer/answer/ice from partner
+  const [iceServers, setIceServers] = useState(STUN_ONLY);
   const isCreator = !session || session.side === "him";
+
+  // upgrade from STUN-only to whatever turn-credentials hands back (real TURN
+  // servers if configured) once, up front — cheap, and worth having ready
+  // before a room even exists so the very first call can use it.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data: { session: authSession } } = await supabase.auth.getSession();
+        if (!authSession) return;
+        const { data, error } = await supabase.functions.invoke("turn-credentials", {
+          headers: { Authorization: `Bearer ${authSession.access_token}` },
+        });
+        if (!error && alive && Array.isArray(data?.iceServers) && data.iceServers.length) setIceServers(data.iceServers);
+      } catch { /* keep STUN-only fallback */ }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   const enterRoom = async (code, side) => {
     setBusy(true); setErr(null);
@@ -169,7 +188,8 @@ export function PhotoBooth({ user, onBack }) {
 
   return (
     <Booth cfg={cfg} session={session} user={user} partnerHere={partnerHere} partnerFrame={partnerFrame}
-      shutterTick={shutterTick} rtcSignal={rtcSignal} onSendFrame={sendFrame} onSendShutter={sendShutter} onSendRtc={sendRtc}
+      shutterTick={shutterTick} rtcSignal={rtcSignal} iceServers={iceServers}
+      onSendFrame={sendFrame} onSendShutter={sendShutter} onSendRtc={sendRtc}
       onDone={() => setStage("setup")} onExit={onBack} />
   );
 }
@@ -254,7 +274,7 @@ function SummaryRow({ label, value }) {
 }
 
 /* ---------------- the booth itself ---------------- */
-function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, rtcSignal, onSendFrame, onSendShutter, onSendRtc, onDone, onExit }) {
+function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, rtcSignal, iceServers, onSendFrame, onSendShutter, onSendRtc, onDone, onExit }) {
   const shots = LAYOUTS.find((l) => l.id === cfg.layout).shots;
   const filter = FILTERS.find((f) => f.id === cfg.filter).css;
   const frame = FRAMES.find((f) => f.id === cfg.frame);
@@ -292,7 +312,7 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, rtc
 
   const ensurePC = useCallback(() => {
     if (pcRef.current) return pcRef.current;
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers });
     streamRef.current?.getTracks().forEach((t) => pc.addTrack(t, streamRef.current));
     pc.ontrack = (e) => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0]; };
     pc.onicecandidate = (e) => { if (e.candidate) onSendRtc({ kind: "ice", data: e.candidate.toJSON() }); };
@@ -302,7 +322,7 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, rtc
     };
     pcRef.current = pc;
     return pc;
-  }, [onSendRtc, teardownPC]);
+  }, [iceServers, onSendRtc, teardownPC]);
 
   // initiator opens the connection once the camera's ready and the partner's in the room
   useEffect(() => {

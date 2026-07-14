@@ -1,9 +1,27 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 /* ============================================================================
    ui.jsx — palette, custom icon set, and shared styling primitives.
    Every component imports from here so production == the showcase.
    ============================================================================ */
+
+// Narrow-viewport check for the handful of spots that need to actively
+// restructure (side-by-side -> stacked) rather than just reflow, since the
+// app is styled almost entirely with inline style objects — plain CSS media
+// queries can't override those. Desktop/tablet (>480px) are completely
+// unaffected; this only ever fires below phone width.
+export function useIsMobile(breakpoint = 480) {
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth <= breakpoint);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const onChange = () => setIsMobile(mq.matches);
+    onChange();
+    mq.addEventListener ? mq.addEventListener("change", onChange) : mq.addListener(onChange);
+    return () => { mq.removeEventListener ? mq.removeEventListener("change", onChange) : mq.removeListener(onChange); };
+  }, [breakpoint]);
+  return isMobile;
+}
 
 export const C = {
   cream: "#FAF4EA", paper: "#FFFDF8", ink: "#4A3F36", inkSoft: "#8B7C6B",
@@ -98,6 +116,12 @@ export function Background({ children }) {
         .row::-webkit-scrollbar{height:6px}.row::-webkit-scrollbar-thumb{background:rgba(0,0,0,.12);border-radius:9px}
         .press{transition:transform .12s ease, box-shadow .18s ease}.press:active{transform:scale(.97)}
         button{font-family:inherit}
+        html,body,#root{max-width:100%;overflow-x:hidden}
+        img,video,canvas{max-width:100%}
+        @media (max-width: 480px){
+          h1{font-size:clamp(28px,10vw,44px) !important}
+          h2{font-size:clamp(20px,7vw,28px) !important}
+        }
       `}</style>
       <div className="blob" style={{ width: 360, height: 360, top: -120, left: -120, background: C.blue, animation: "drift 12s ease-in-out infinite" }} />
       <div className="blob" style={{ width: 360, height: 360, bottom: -120, right: -120, background: C.rose, animation: "drift 14s ease-in-out infinite" }} />

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useRoom } from "../hooks/useRoom";
 import { C, Icon, Mark } from "../ui";
 import { Questions } from "./Questions";
@@ -12,7 +11,11 @@ const ONLINE_WINDOW = 12000;
 export function Game({ session, user, onLeave }) {
   const room = useRoom(session.room, session.code, session.side, user);
   const { state, status, error } = room;
-  const [tab, setTab] = useState("questions");
+  // Synced tab: whichever section one partner opens (questions, drawing,
+  // creative, gallery), the other partner's screen follows automatically —
+  // reuses the room's `mode` field, which was already synced but unused for nav.
+  const tab = state.mode || "questions";
+  const setTab = (id) => room.commit((s) => { s.mode = id; return s; });
   const mine = session.side;
   const local = !!session.local;
   const names = session.names || null; // { him, her } in together mode

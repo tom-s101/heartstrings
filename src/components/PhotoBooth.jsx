@@ -6,11 +6,17 @@ import { C, Icon, card, primary, ghost, Label, Input, Hint } from "../ui";
    Photo Booth — two ways in:
    • Solo (1 device): customize → countdown shots → strip → save. All local.
    • Room (long distance): one partner creates a room (auto 6-letter code),
-     the other joins with the code. The countdown is synced, each device
-     captures its own camera, photos upload to booth_photos, and BOTH devices
-     compose a combined his+hers strip.
-   Reuses the existing room system: the code IS the room name (prefixed), so
-   join_room, membership, and RLS all apply unchanged.
+     the other joins with the code. The room's channel is owned by the
+     PhotoBooth shell (not the Booth screen) so it stays alive across setup
+     AND the booth itself. That lets us:
+       - sync the strip's look (layout/frame/filter/caption) from whoever
+         created the room to whoever joins with the code, live, no re-entry.
+       - stream a low-fps preview of each partner's camera to the other, so
+         the live view (and the final shots) show both of you together in
+         one split frame, not just your own face.
+     The countdown is still synced (broadcast "shutter"), each device shoots
+     its own camera, and composites itself + the last frame it has of its
+     partner into a single photo per shot.
    ============================================================================ */
 
 const FRAMES = [
@@ -30,16 +36,28 @@ const LAYOUTS = [
   { id: "strip4", label: "Strip · 4", shots: 4 },
 ];
 const SHOT_W = 480, SHOT_H = 360;
+const DEFAULT_CFG = { layout: "strip3", frame: "rose", filter: "none", caption: "us ♡", date: true };
 
 const genCode = () => Array.from({ length: 6 }, () => "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("");
 
 export function PhotoBooth({ user, onBack }) {
   const [stage, setStage] = useState("mode"); // mode | joincode | setup | booth
   const [session, setSession] = useState(null); // null (solo) | { code, roomId, side }
-  const [cfg, setCfg] = useState({ layout: "strip3", frame: "rose", filter: "none", caption: "us ♡", date: true });
+  const [cfg, setCfg] = useState(DEFAULT_CFG);
   const [joinInput, setJoinInput] = useState("");
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  // room-wide sync: alive from the moment a room exists (setup) through the
+  // booth screen itself, so config + camera frames + the shutter all flow
+  // over one channel instead of being recreated per screen.
+  const channelRef = useRef(null);
+  const cfgRef = useRef(cfg);
+  useEffect(() => { cfgRef.current = cfg; }, [cfg]);
+  const [partnerHere, setPartnerHere] = useState(false);
+  const [partnerFrame, setPartnerFrame] = useState(null); // last low-fps snapshot of their camera
+  const [shutterTick, setShutterTick] = useState(0);
+  const isCreator = !session || session.side === "him";
 
   const enterRoom = async (code, side) => {
     setBusy(true); setErr(null);
@@ -51,11 +69,60 @@ export function PhotoBooth({ user, onBack }) {
     setStage("setup");
   };
 
+  useEffect(() => {
+    if (!session) return;
+    const ch = supabase.channel(`booth:${session.roomId}`, {
+      config: { presence: { key: session.side }, broadcast: { self: false } },
+    });
+    channelRef.current = ch;
+
+    ch.on("presence", { event: "sync" }, () => {
+      const sides = new Set(Object.values(ch.presenceState()).flat().map((m) => m.side));
+      const otherHere = sides.has(session.side === "him" ? "her" : "him");
+      setPartnerHere(otherHere);
+      // whoever created the room is the source of truth for the strip's
+      // look — re-send it whenever the partner (re)appears, so a joiner
+      // who arrives after customization already started still gets it.
+      if (session.side === "him" && otherHere) {
+        ch.send({ type: "broadcast", event: "cfg", payload: cfgRef.current });
+      }
+    });
+    ch.on("broadcast", { event: "cfg" }, ({ payload }) => { if (session.side !== "him") setCfg(payload); });
+    ch.on("broadcast", { event: "frame" }, ({ payload }) => setPartnerFrame(payload.img));
+    ch.on("broadcast", { event: "shutter" }, () => setShutterTick((t) => t + 1));
+
+    ch.subscribe(async (st) => {
+      if (st === "SUBSCRIBED") {
+        await ch.track({ side: session.side });
+        if (session.side === "him") ch.send({ type: "broadcast", event: "cfg", payload: cfgRef.current });
+      }
+    });
+    return () => { supabase.removeChannel(ch); channelRef.current = null; setPartnerHere(false); setPartnerFrame(null); };
+    // eslint-disable-next-line
+  }, [session?.roomId]);
+
+  // creator's edits propagate live to whoever already joined
+  useEffect(() => {
+    if (session?.side === "him" && channelRef.current) {
+      channelRef.current.send({ type: "broadcast", event: "cfg", payload: cfg });
+    }
+    // eslint-disable-next-line
+  }, [cfg]);
+
+  const sendFrame = useCallback((img) => {
+    channelRef.current?.send({ type: "broadcast", event: "frame", payload: { img } });
+  }, []);
+  const sendShutter = useCallback(() => {
+    channelRef.current?.send({ type: "broadcast", event: "shutter", payload: {} });
+  }, []);
+
+  const startFresh = (nextSession) => { setCfg(DEFAULT_CFG); setSession(nextSession); setStage(nextSession ? "setup" : "setup"); };
+
   if (stage === "mode") return (
     <Shell onBack={onBack} title="Photo Booth" sub="how do you want to shoot?">
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <BigOption icon="camera" title="One device" sub="you're together (or flying solo) — shoot on this screen"
-          color={C.gold} onClick={() => { setSession(null); setStage("setup"); }} />
+          color={C.gold} onClick={() => { setCfg(DEFAULT_CFG); setSession(null); setStage("setup"); }} />
         <BigOption icon="plane" title="Create a room" sub="get a code, send it to your favorite person far away"
           color={C.blue} onClick={() => enterRoom(genCode(), "him")} busy={busy} />
         <BigOption icon="lock" title="Join with a code" sub="they sent you a booth code? hop in here"
@@ -79,44 +146,69 @@ export function PhotoBooth({ user, onBack }) {
   );
 
   if (stage === "setup") return (
-    <Setup cfg={cfg} setCfg={setCfg} session={session}
+    <Setup cfg={cfg} setCfg={setCfg} session={session} canEdit={isCreator} partnerHere={partnerHere}
       onBack={() => setStage("mode")} onStart={() => setStage("booth")} />
   );
 
-  return <Booth cfg={cfg} session={session} user={user} onDone={() => setStage("setup")} onExit={onBack} />;
+  return (
+    <Booth cfg={cfg} session={session} user={user} partnerHere={partnerHere} partnerFrame={partnerFrame}
+      shutterTick={shutterTick} onSendFrame={sendFrame} onSendShutter={sendShutter}
+      onDone={() => setStage("setup")} onExit={onBack} />
+  );
 }
 
 /* ---------------- setup / customization ---------------- */
-function Setup({ cfg, setCfg, session, onBack, onStart }) {
+function Setup({ cfg, setCfg, session, canEdit, partnerHere, onBack, onStart }) {
   const set = (k, v) => setCfg((c) => ({ ...c, [k]: v }));
   const frame = FRAMES.find((f) => f.id === cfg.frame);
   return (
     <Shell onBack={onBack} title="Design your strip" sub={session ? "you're in a shared booth" : "make it yours"}>
-      {session && (
+      {session && canEdit && (
         <div style={{ textAlign: "center", background: C.blueLight, borderRadius: 14, padding: "12px", marginBottom: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: C.blueDeep, letterSpacing: 1 }}>BOOTH CODE — SEND THIS TO THEM</div>
           <div style={{ fontFamily: "'Fraunces',serif", fontSize: 32, fontWeight: 700, letterSpacing: 6, color: C.blueDeep }}>{session.code}</div>
-          <div style={{ fontFamily: "'Caveat',cursive", fontSize: 16, color: C.inkSoft }}>they tap “Join with a code” and enter it</div>
+          <div style={{ fontFamily: "'Caveat',cursive", fontSize: 16, color: C.inkSoft }}>they tap "Join with a code" and enter it — whatever you pick below shows up on their screen too</div>
         </div>
       )}
-      <Section label="strip layout">
-        {LAYOUTS.map((l) => <Pick key={l.id} active={cfg.layout === l.id} onClick={() => set("layout", l.id)} label={l.label} />)}
-      </Section>
-      <Section label="frame">
-        {FRAMES.map((f) => (
-          <button key={f.id} className="press" onClick={() => set("frame", f.id)} style={{
-            border: `2px solid ${cfg.frame === f.id ? f.accent : C.line}`, background: f.bg, color: f.accent,
-            borderRadius: 12, padding: "9px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{f.label}</button>
-        ))}
-      </Section>
-      <Section label="mood filter">
-        {FILTERS.map((f) => <Pick key={f.id} active={cfg.filter === f.id} onClick={() => set("filter", f.id)} label={f.label} />)}
-      </Section>
-      <Label style={{ marginTop: 16 }}>caption on the strip</Label>
-      <Input value={cfg.caption} onChange={(v) => set("caption", v)} placeholder="us ♡ · date night · manila ↔ mindoro" />
-      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13.5, color: C.ink, cursor: "pointer" }}>
-        <input type="checkbox" checked={cfg.date} onChange={(e) => set("date", e.target.checked)} /> stamp today's date
-      </label>
+      {session && !canEdit && (
+        <div style={{ textAlign: "center", background: C.roseLight, borderRadius: 14, padding: "12px", marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: C.roseDeep, letterSpacing: 1 }}>
+            {partnerHere ? "SYNCED WITH THEIR PICKS" : "WAITING TO SYNC"}
+          </div>
+          <div style={{ fontFamily: "'Caveat',cursive", fontSize: 16, color: C.inkSoft }}>
+            {partnerHere ? "they're designing the strip — it'll update here automatically" : "once they're in and pick a look, it'll appear here"}
+          </div>
+        </div>
+      )}
+      {canEdit ? (
+        <>
+          <Section label="strip layout">
+            {LAYOUTS.map((l) => <Pick key={l.id} active={cfg.layout === l.id} onClick={() => set("layout", l.id)} label={l.label} />)}
+          </Section>
+          <Section label="frame">
+            {FRAMES.map((f) => (
+              <button key={f.id} className="press" onClick={() => set("frame", f.id)} style={{
+                border: `2px solid ${cfg.frame === f.id ? f.accent : C.line}`, background: f.bg, color: f.accent,
+                borderRadius: 12, padding: "9px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>{f.label}</button>
+            ))}
+          </Section>
+          <Section label="mood filter">
+            {FILTERS.map((f) => <Pick key={f.id} active={cfg.filter === f.id} onClick={() => set("filter", f.id)} label={f.label} />)}
+          </Section>
+          <Label style={{ marginTop: 16 }}>caption on the strip</Label>
+          <Input value={cfg.caption} onChange={(v) => set("caption", v)} placeholder="us ♡ · date night · manila ↔ mindoro" />
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 13.5, color: C.ink, cursor: "pointer" }}>
+            <input type="checkbox" checked={cfg.date} onChange={(e) => set("date", e.target.checked)} /> stamp today's date
+          </label>
+        </>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <SummaryRow label="layout" value={LAYOUTS.find((l) => l.id === cfg.layout)?.label} />
+          <SummaryRow label="frame" value={frame.label} />
+          <SummaryRow label="filter" value={FILTERS.find((f) => f.id === cfg.filter)?.label} />
+          <SummaryRow label="caption" value={cfg.caption || "—"} />
+        </div>
+      )}
       {/* mini preview */}
       <div style={{ display: "flex", justifyContent: "center", margin: "18px 0 6px" }}>
         <div style={{ background: frame.bg, borderRadius: 10, padding: "12px 10px", width: 92, boxShadow: "0 14px 26px -18px rgba(0,0,0,.5)" }}>
@@ -135,8 +227,17 @@ function Setup({ cfg, setCfg, session, onBack, onStart }) {
   );
 }
 
+function SummaryRow({ label, value }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", borderRadius: 12, background: "#fff", border: `1px solid ${C.line}` }}>
+      <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".5px", textTransform: "uppercase", color: C.inkSoft }}>{label}</span>
+      <span style={{ fontSize: 13.5, fontWeight: 700, color: C.ink }}>{value}</span>
+    </div>
+  );
+}
+
 /* ---------------- the booth itself ---------------- */
-function Booth({ cfg, session, user, onDone, onExit }) {
+function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onSendFrame, onSendShutter, onDone, onExit }) {
   const shots = LAYOUTS.find((l) => l.id === cfg.layout).shots;
   const filter = FILTERS.find((f) => f.id === cfg.filter).css;
   const frame = FRAMES.find((f) => f.id === cfg.frame);
@@ -146,12 +247,10 @@ function Booth({ cfg, session, user, onDone, onExit }) {
   const [camErr, setCamErr] = useState(null);
   const [count, setCount] = useState(null);   // 3..2..1 overlay
   const [flash, setFlash] = useState(false);
-  const [mine, setMine] = useState([]);       // my captured shots (data urls)
-  const [partner, setPartner] = useState([]); // partner shots (room mode)
-  const [partnerHere, setPartnerHere] = useState(false);
+  const [mine, setMine] = useState([]);       // captured shots (data urls) — already include partner when in a room
   const [phase, setPhase] = useState("idle"); // idle | shooting | done
-  const channelRef = useRef(null);
   const shooting = useRef(false);
+  const partnerImgRef = useRef(null); // decoded <img> of partnerFrame, ready for canvas draws
 
   /* camera */
   useEffect(() => {
@@ -170,44 +269,64 @@ function Booth({ cfg, session, user, onDone, onExit }) {
     return () => { alive = false; streamRef.current?.getTracks().forEach((t) => t.stop()); };
   }, []);
 
-  /* room channel: presence + shutter sync + partner photos */
+  /* stream a light snapshot of our own camera to our partner, a few times a
+     second — enough for a live "them" preview + fresh material to composite
+     into shots, without trying to run real video over Realtime broadcast. */
   useEffect(() => {
-    if (!session) return;
-    const ch = supabase.channel(`booth:${session.roomId}`, {
-      config: { presence: { key: session.side }, broadcast: { self: false } },
-    });
-    channelRef.current = ch;
-    ch.on("presence", { event: "sync" }, () => {
-      const sides = new Set(Object.values(ch.presenceState()).flat().map((m) => m.side));
-      setPartnerHere(sides.has(session.side === "him" ? "her" : "him"));
-    });
-    ch.on("broadcast", { event: "shutter" }, () => { if (!shooting.current) runSequence(false); });
-    ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "booth_photos", filter: `room_id=eq.${session.roomId}` },
-      ({ new: row }) => { if (row.side !== session.side) setPartner((p) => { const n = [...p]; n[row.idx] = row.image; return n; }); });
-    ch.subscribe(async (st) => { if (st === "SUBSCRIBED") await ch.track({ side: session.side }); });
-    return () => { supabase.removeChannel(ch); };
+    if (!session || !ready) return;
+    const cv = document.createElement("canvas"); cv.width = 240; cv.height = 180;
+    const cx = cv.getContext("2d");
+    const iv = setInterval(() => {
+      const v = videoRef.current;
+      if (!v || !v.videoWidth) return;
+      drawCover(cx, v, 0, 0, 240, 180, false);
+      onSendFrame(cv.toDataURL("image/jpeg", 0.5));
+    }, 220);
+    return () => clearInterval(iv);
+  }, [session, ready, onSendFrame]);
+
+  /* decode the latest partner snapshot so capture() can draw it synchronously */
+  useEffect(() => {
+    if (!partnerFrame) { partnerImgRef.current = null; return; }
+    const img = new Image();
+    img.onload = () => { partnerImgRef.current = img; };
+    img.src = partnerFrame;
+  }, [partnerFrame]);
+
+  /* the partner's shutter press starts our countdown too */
+  const prevTick = useRef(shutterTick);
+  useEffect(() => {
+    if (shutterTick !== prevTick.current) {
+      prevTick.current = shutterTick;
+      if (!shooting.current) runSequence(false);
+    }
     // eslint-disable-next-line
-  }, [session?.roomId]);
+  }, [shutterTick]);
 
   const capture = useCallback(() => {
     const v = videoRef.current; if (!v) return null;
     const cv = document.createElement("canvas"); cv.width = SHOT_W; cv.height = SHOT_H;
     const x = cv.getContext("2d");
-    // mirror + cover-crop
-    const vr = v.videoWidth / v.videoHeight, tr = SHOT_W / SHOT_H;
-    let sw = v.videoWidth, sh = v.videoHeight, sx = 0, sy = 0;
-    if (vr > tr) { sw = sh * tr; sx = (v.videoWidth - sw) / 2; } else { sh = sw / tr; sy = (v.videoHeight - sh) / 2; }
-    x.translate(SHOT_W, 0); x.scale(-1, 1);
     if (filter !== "none") x.filter = filter.replace("blur(0.4px)", ""); // canvas blur is heavy; skip
-    x.drawImage(v, sx, sy, sw, sh, 0, 0, SHOT_W, SHOT_H);
-    return cv.toDataURL("image/jpeg", 0.72);
-  }, [filter]);
+    if (session) {
+      const half = SHOT_W / 2;
+      drawCover(x, v, 0, 0, half, SHOT_H, true); // you, mirrored — the selfie you expect
+      if (partnerImgRef.current) drawCover(x, partnerImgRef.current, half, 0, half, SHOT_H, false); // them, true orientation
+      else { x.filter = "none"; x.fillStyle = "#2a2a2a"; x.fillRect(half, 0, half, SHOT_H); }
+      x.filter = "none";
+      x.strokeStyle = "rgba(255,255,255,.55)"; x.lineWidth = 2;
+      x.beginPath(); x.moveTo(half, 0); x.lineTo(half, SHOT_H); x.stroke();
+    } else {
+      drawCover(x, v, 0, 0, SHOT_W, SHOT_H, true);
+    }
+    return cv.toDataURL("image/jpeg", 0.75);
+  }, [filter, session]);
 
   const runSequence = useCallback(async (broadcast) => {
     if (shooting.current) return;
     shooting.current = true;
-    setPhase("shooting"); setMine([]); if (session) setPartner([]);
-    if (broadcast && session) channelRef.current?.send({ type: "broadcast", event: "shutter", payload: {} });
+    setPhase("shooting"); setMine([]);
+    if (broadcast && session) onSendShutter();
     const taken = [];
     for (let i = 0; i < shots; i++) {
       for (let c = 3; c >= 1; c--) { setCount(c); await wait(1000); }
@@ -215,22 +334,19 @@ function Booth({ cfg, session, user, onDone, onExit }) {
       const img = capture();
       if (img) {
         taken.push(img); setMine([...taken]);
-        if (session) {
-          supabase.from("booth_photos").insert({ room_id: session.roomId, side: session.side, idx: i, image: img });
-        }
+        if (session) supabase.from("booth_photos").insert({ room_id: session.roomId, side: session.side, idx: i, image: img });
       }
       if (i < shots - 1) await wait(900);
     }
     setPhase("done");
     shooting.current = false;
-  }, [shots, capture, session]);
+  }, [shots, capture, session, onSendShutter]);
 
-  /* strip download */
+  /* strip download — each shot is already a finished frame (both of you, if
+     this is a room booth), so the strip is always a single column. */
   const downloadStrip = () => {
-    const isDuo = !!session;
     const pad = 26, gap = 14, w = 300, h = Math.round(w * SHOT_H / SHOT_W);
-    const cols = isDuo ? 2 : 1;
-    const W = pad * 2 + cols * w + (cols - 1) * gap;
+    const W = pad * 2 + w;
     const capH = 74;
     const H = pad + shots * (h + gap) + capH;
     const cv = document.createElement("canvas"); cv.width = W * 2; cv.height = H * 2;
@@ -244,12 +360,8 @@ function Booth({ cfg, session, user, onDone, onExit }) {
     (async () => {
       for (let i = 0; i < shots; i++) {
         const y = pad + i * (h + gap);
-        const a = isDuo ? (mine.length && session.side === "him" ? mine[i] : partner[i]) : mine[i];
-        const b = isDuo ? (session.side === "him" ? partner[i] : mine[i]) : null;
-        if (isDuo) {
-          if (a) await draw(a, pad, y); else placeholder(x, pad, y, w, h, frame.accent);
-          if (b) await draw(b, pad + w + gap, y); else placeholder(x, pad + w + gap, y, w, h, frame.accent);
-        } else if (a) await draw(a, pad, y);
+        const a = mine[i];
+        if (a) await draw(a, pad, y); else placeholder(x, pad, y, w, h, frame.accent);
       }
       x.fillStyle = frame.accent; x.textAlign = "center";
       x.font = "italic 600 26px Georgia, serif";
@@ -260,7 +372,6 @@ function Booth({ cfg, session, user, onDone, onExit }) {
     })();
   };
 
-  const other = session?.side === "him" ? "her" : "him";
   const duoReady = !session || partnerHere;
 
   return (
@@ -284,9 +395,28 @@ function Booth({ cfg, session, user, onDone, onExit }) {
             <p style={{ color: C.inkSoft, fontSize: 14 }}>{camErr}</p>
           </div>
         ) : (
-          <div style={{ position: "relative", borderRadius: 18, overflow: "hidden", background: "#111", aspectRatio: "4/3" }}>
-            <video ref={videoRef} autoPlay playsInline muted
-              style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", filter, opacity: ready ? 1 : 0 }} />
+          <div style={{ position: "relative", borderRadius: 18, overflow: "hidden", background: "#111", aspectRatio: "4/3", display: "flex" }}>
+            {session ? (
+              <>
+                <Pane label="you">
+                  <video ref={videoRef} autoPlay playsInline muted
+                    style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", filter, opacity: ready ? 1 : 0 }} />
+                </Pane>
+                <div style={{ width: 2, background: "rgba(255,255,255,.35)" }} />
+                <Pane label="them">
+                  {partnerFrame ? (
+                    <img src={partnerFrame} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter }} />
+                  ) : (
+                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.55)", fontSize: 12, textAlign: "center", padding: 10 }}>
+                      {partnerHere ? "loading their camera…" : "waiting for them to join…"}
+                    </div>
+                  )}
+                </Pane>
+              </>
+            ) : (
+              <video ref={videoRef} autoPlay playsInline muted
+                style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", filter, opacity: ready ? 1 : 0 }} />
+            )}
             {count != null && (
               <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <span key={count} className="pop" style={{ fontFamily: "'Fraunces',serif", fontSize: 110, fontWeight: 700, color: "#fff", textShadow: "0 6px 30px rgba(0,0,0,.5)" }}>{count}</span>
@@ -302,14 +432,9 @@ function Booth({ cfg, session, user, onDone, onExit }) {
         )}
 
         {/* thumbnails */}
-        {(mine.length > 0 || partner.some(Boolean)) && (
+        {mine.length > 0 && (
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", justifyContent: "center" }}>
-            {Array.from({ length: shots }).map((_, i) => (
-              <div key={i} style={{ display: "flex", gap: 3 }}>
-                <Thumb src={mine[i]} accent={frame.accent} />
-                {session && <Thumb src={partner[i]} accent={frame.accent} dashed />}
-              </div>
-            ))}
+            {Array.from({ length: shots }).map((_, i) => <Thumb key={i} src={mine[i]} accent={frame.accent} />)}
           </div>
         )}
 
@@ -326,15 +451,12 @@ function Booth({ cfg, session, user, onDone, onExit }) {
               <button className="press" onClick={downloadStrip} style={primary(true, { flex: 2 })}>
                 <Icon name="download" size={18} color="#fff" /> save the strip
               </button>
-              <button className="press" onClick={() => { setMine([]); setPartner([]); setPhase("idle"); }} style={ghost({ flex: 1 })}>
+              <button className="press" onClick={() => { setMine([]); setPhase("idle"); }} style={ghost({ flex: 1 })}>
                 <Icon name="refresh" size={16} color={C.ink} /> retake
               </button>
             </>
           )}
         </div>
-        {session && phase === "done" && partner.filter(Boolean).length < shots && (
-          <Hint style={{ textAlign: "center", marginTop: 10 }}>waiting for {other === "him" ? "his" : "her"} photos to arrive — the strip will include whatever's here when you save.</Hint>
-        )}
         <div style={{ textAlign: "center", marginTop: 10 }}>
           <button className="press" onClick={onDone} style={{ border: "none", background: "transparent", color: C.inkSoft, fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>back to strip design</button>
         </div>
@@ -348,10 +470,35 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 function rr(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
 function placeholder(x, cx, cy, w, h, accent) { x.save(); rr(x, cx, cy, w, h, 8); x.fillStyle = "#ffffff88"; x.fill(); x.strokeStyle = accent; x.setLineDash([5, 5]); x.stroke(); x.restore(); }
 
-function Thumb({ src, accent, dashed }) {
+// cover-crop `source` (a <video> or <img>/Image) into a dw×dh rect at (dx,dy),
+// optionally mirrored — shared by the live camera capture and the periodic
+// low-fps snapshots we broadcast to a partner.
+function drawCover(ctx, source, dx, dy, dw, dh, mirror) {
+  const sw0 = source.videoWidth || source.naturalWidth || source.width;
+  const sh0 = source.videoHeight || source.naturalHeight || source.height;
+  if (!sw0 || !sh0) return;
+  const sr = sw0 / sh0, tr = dw / dh;
+  let sw = sw0, sh = sh0, sx = 0, sy = 0;
+  if (sr > tr) { sw = sh * tr; sx = (sw0 - sw) / 2; } else { sh = sw / tr; sy = (sh0 - sh) / 2; }
+  ctx.save();
+  if (mirror) { ctx.translate(dx + dw, dy); ctx.scale(-1, 1); ctx.drawImage(source, sx, sy, sw, sh, 0, 0, dw, dh); }
+  else { ctx.drawImage(source, sx, sy, sw, sh, dx, dy, dw, dh); }
+  ctx.restore();
+}
+
+function Pane({ label, children }) {
+  return (
+    <div style={{ position: "relative", flex: 1, overflow: "hidden", background: "#1c1c1c" }}>
+      {children}
+      <span style={{ position: "absolute", left: 6, bottom: 6, fontSize: 10, fontWeight: 800, color: "#fff", background: "rgba(0,0,0,.45)", borderRadius: 6, padding: "2px 6px" }}>{label}</span>
+    </div>
+  );
+}
+
+function Thumb({ src, accent }) {
   return src
     ? <img src={src} alt="" style={{ width: 52, height: 39, objectFit: "cover", borderRadius: 6, border: `1.5px solid ${accent}` }} />
-    : <div style={{ width: 52, height: 39, borderRadius: 6, border: `1.5px ${dashed ? "dashed" : "solid"} ${C.line}`, background: "#fff" }} />;
+    : <div style={{ width: 52, height: 39, borderRadius: 6, border: `1.5px dashed ${C.line}`, background: "#fff" }} />;
 }
 function Shell({ onBack, title, sub, children }) {
   return (

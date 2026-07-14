@@ -12,7 +12,7 @@ const OPTIONS = [
     sub: "miles apart, side by side",
     desc: "Play synced games and questions over a video call — each of you on your own device, everything mirrored live.",
     color: C.blue, deep: C.blueDeep, light: C.blueLight,
-    tags: ["synced rooms", "live drawing", "AI question games"],
+    tags: ["synced rooms", "live drawing", "get-to-know-you questions"],
   },
   {
     id: "booth", icon: "camera", title: "Photo Booth",

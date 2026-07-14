@@ -100,7 +100,7 @@ function extractJSON(raw: string): string {
 function garbled(text: unknown): boolean {
   if (typeof text !== "string") return true;
   const t = text.trim();
-  if (!t || t.length > 500) return true;
+  if (!t || t.length > 700) return true;
   if (/^[{[][\s\S]*[}\]]$/.test(t)) return true;      // the whole string IS a JSON/array blob
   if (/"[a-zA-Z_]+"\s*:\s*["{[\d]/.test(t)) return true; // a literal `"key": value` fragment leaked in
   if (/```/.test(t)) return true;                      // a stray code fence
@@ -133,20 +133,55 @@ function isValidRound(shape: string, round: unknown): round is Record<string, un
 // live attempt at the model genuinely fails — keeps the UI shape-correct
 // (never swaps a game into an unrelated generic question) even then.
 function fallbackFor(format: string, shape: string): Record<string, unknown> {
-  const table: Record<string, Record<string, unknown>> = {
-    choice2:     { prompt: "Tonight: cozy night in or spontaneous night out?", options: ["Cozy night in", "Spontaneous night out"] },
-    redGreen:    { prompt: "Remembers little things you mentioned in passing, weeks later." },
-    open:        { prompt: "Tell me about a moment today you wished I'd been there for." },
-    guess:       { prompt: "their go-to order at a coffee shop is" },
-    spectrum2:   { prompt: "Splitting the bill down the middle, always, no matter who ordered what." },
-    spectrum3:   { prompt: "who is more likely to forget where they put their phone" },
-    handraise:   { prompt: "Never have I ever cried during a commercial." },
-    choiceMulti: { prompt: "You've had a rough day and just walked in the door. What actually helps most?", options: ["A hug, no talking yet", "Them asking what happened", "Them just making you tea", "Some quiet time, then talk"] },
-    twolie:      { prompt: "a few things about me…", options: ["I can't sleep without socks on", "I've never seen a single Star Wars movie", "I once ate cereal for dinner five nights in a row"] },
-    truthDare:   { truth: "What's a small thing that instantly makes your day better?", dare: "Send a voice memo saying the nicest thing about your partner right now." },
-    slider:      { prompt: "How much you finish each other's sentences." },
+  const table: Record<string, Record<string, unknown>[]> = {
+    choice2: [
+      { prompt: "Tonight: cozy night in or spontaneous night out?", options: ["Cozy night in", "Spontaneous night out"] },
+      { prompt: "Weekend trip: mountains or beach?", options: ["Mountains", "Beach"] },
+    ],
+    redGreen: [
+      { prompt: "Remembers little things you mentioned in passing, weeks later." },
+      { prompt: "Goes quiet for days after an argument instead of talking it through." },
+      { prompt: "Checks in without being asked when you've had a rough day." },
+      { prompt: "Keeps score of who did what last time you disagreed." },
+    ],
+    open: [
+      { prompt: "Tell me about a moment today you wished I'd been there for." },
+      { prompt: "What's something small that made you smile today?" },
+    ],
+    guess: [
+      { prompt: "their go-to order at a coffee shop is" },
+      { prompt: "the song they know every word to is" },
+    ],
+    spectrum2: [
+      { prompt: "Splitting the bill down the middle, always, no matter who ordered what." },
+      { prompt: "Texting 'good morning' every single day is non-negotiable." },
+    ],
+    spectrum3: [
+      { prompt: "who is more likely to forget where they put their phone" },
+      { prompt: "who is more likely to fall asleep mid-movie" },
+    ],
+    handraise: [
+      { prompt: "Never have I ever cried during a commercial." },
+      { prompt: "Never have I ever texted the wrong person something embarrassing." },
+    ],
+    choiceMulti: [
+      { prompt: "You've had a rough day and just walked in the door. What actually helps most?", options: ["A hug, no talking yet", "Them asking what happened", "Them just making you tea", "Some quiet time, then talk"] },
+    ],
+    twolie: [
+      { prompt: "a few things about me…", options: ["I can't sleep without socks on", "I've never seen a single Star Wars movie", "I once ate cereal for dinner five nights in a row"] },
+      { prompt: "some things about me, one's a lie…", options: ["I've never broken a bone", "I know how to juggle", "I once got lost in my own neighborhood"] },
+    ],
+    truthDare: [
+      { truth: "What's a small thing that instantly makes your day better?", dare: "Send a voice memo saying the nicest thing about your partner right now." },
+    ],
+    slider: [
+      { prompt: "How much you finish each other's sentences." },
+      { prompt: "How spontaneous the two of you are together." },
+    ],
   };
-  return table[shape] ?? { prompt: "What's something small about today you want to remember?" };
+  const options = table[shape];
+  if (!options || !options.length) return { prompt: "What's something small about today you want to remember?" };
+  return options[Math.floor(Math.random() * options.length)];
 }
 
 Deno.serve(async (req) => {
@@ -194,10 +229,7 @@ Deno.serve(async (req) => {
       `Generate ONE round of a couples' connection game (long-distance dating).\n` +
       `Format: ${format} — ${fmt.instr}.\n` +
       (leaning
-        ? `This behavior MUST genuinely be a ${leaning === "red"
-            ? "RED flag — a real, concerning, unhealthy relationship behavior (not just a mild quirk)"
-            : "GREEN flag — a real, admirable, healthy relationship behavior"
-          }. Describe it plainly and neutrally in ONE sentence. Do NOT use the words "red flag" or "green flag" anywhere in the text — the couple has to judge it themselves.\n`
+        ? `Write ONE short, plain sentence (max 18 words, no sub-clauses, no caveats) describing a specific ${leaning === "red" ? "concerning/unhealthy" : "healthy/admirable"} relationship behavior. Do not use the words "red flag" or "green flag". Do not explain or hedge — just state the behavior.\n`
         : "") +
       `Tone: ${VIBE_LABEL[vibe] ?? vibe}.\n` +
       (theme ? `Theme to weave in: "${theme}".\n` : "") +

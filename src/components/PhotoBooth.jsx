@@ -257,7 +257,7 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onS
     let alive = true;
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 960 } }, audio: false });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
         if (!alive) { stream.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = stream;
         if (videoRef.current) { videoRef.current.srcObject = stream; }
@@ -269,19 +269,23 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onS
     return () => { alive = false; streamRef.current?.getTracks().forEach((t) => t.stop()); };
   }, []);
 
-  /* stream a light snapshot of our own camera to our partner, a few times a
-     second — enough for a live "them" preview + fresh material to composite
-     into shots, without trying to run real video over Realtime broadcast. */
+  /* stream a snapshot of our own camera to our partner a few times a second
+     — this is what ends up in their half of the composited photo, so it's
+     captured at the SAME resolution/aspect as the half-frame it'll fill
+     (not a tiny thumbnail that then gets blurrily upscaled) and at a high
+     JPEG quality. A few frames a second is plenty for a photo booth pose;
+     we're deliberately not trying to run real video over Realtime broadcast. */
   useEffect(() => {
     if (!session || !ready) return;
-    const cv = document.createElement("canvas"); cv.width = 240; cv.height = 180;
+    const FW = SHOT_W / 2, FH = SHOT_H; // exactly the size of the half-slot it fills
+    const cv = document.createElement("canvas"); cv.width = FW; cv.height = FH;
     const cx = cv.getContext("2d");
     const iv = setInterval(() => {
       const v = videoRef.current;
       if (!v || !v.videoWidth) return;
-      drawCover(cx, v, 0, 0, 240, 180, false);
-      onSendFrame(cv.toDataURL("image/jpeg", 0.5));
-    }, 220);
+      drawCover(cx, v, 0, 0, FW, FH, false);
+      onSendFrame(cv.toDataURL("image/jpeg", 0.85));
+    }, 300);
     return () => clearInterval(iv);
   }, [session, ready, onSendFrame]);
 
@@ -319,7 +323,7 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onS
     } else {
       drawCover(x, v, 0, 0, SHOT_W, SHOT_H, true);
     }
-    return cv.toDataURL("image/jpeg", 0.75);
+    return cv.toDataURL("image/jpeg", 0.88);
   }, [filter, session]);
 
   const runSequence = useCallback(async (broadcast) => {

@@ -20,6 +20,17 @@ const VIBES = [{ id: "sweet", icon: "flower", label: "Sweet" }, { id: "silly", i
 const CHOICES = {
   redGreen: [{ k: "red", label: "Red flag", icon: "flag", c: C.roseDeep }, { k: "green", label: "Green flag", icon: "flag", c: C.sageDeep }],
 };
+// The shape a round SHOULD have for each game format, per the current build.
+// If a round comes back with any other shape, it's leftover from an older
+// deploy of the server function (or an old cached round) — we catch that
+// below and show a "reload this round" prompt instead of silently rendering
+// a blank/broken card.
+const SHAPE_FOR = {
+  wyr: "choice2", trolley: "choice2", redflags: "redGreen", cah: "open",
+  mostlikely: "spectrum3", nhie: "handraise", newlywed: "guess", hottake: "spectrum2",
+  thisorthat: "choice2", truthdare: "truthDare", lovelang: "choiceMulti",
+  twotruths: "twolie", compat: "slider",
+};
 
 // Legacy/defense-in-depth guard: refuse to render prompts that still carry an
 // actual signature of leaked JSON/markdown (a whole JSON blob, a literal
@@ -148,6 +159,8 @@ export function Questions({ room, mine, local = false, names = null }) {
           <Card count={q.count} sel={q.sel} icon={FORMATS.find((f) => f.id === q.sel)?.icon} name={FORMATS.find((f) => f.id === q.sel)?.name} generating={q.generating} genMine={q.genBy === room.clientId}>
             {q.round && looksGarbled(q.round.prompt) && q.round.shape !== "truthDare"
               ? <GlitchNotice onRetry={next} />
+              : q.round && SHAPE_FOR[q.sel] && q.round.shape !== SHAPE_FOR[q.sel]
+              ? <StaleNotice onRetry={next} />
               : <RoundCard round={q.round} picks={q.picks} mine={mine} setPick={setPick} setSlider={setSlider} setSpectrum={setSpectrum} td={td} setTd={setTd} local={local} names={names} />}
           </Card>
           <Primary onClick={next} loading={q.generating && !stale} icon="refresh" label={q.generating ? "dealing…" : "new round"} />
@@ -168,6 +181,18 @@ function GlitchNotice({ onRetry }) {
       </p>
       <button className="press" onClick={onRetry} style={{ border: `1.5px solid ${C.sage}`, background: "#fff", borderRadius: 13, padding: "9px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer", color: C.ink }}>
         try a fresh one
+      </button>
+    </div>
+  );
+}
+function StaleNotice({ onRetry }) {
+  return (
+    <div style={{ textAlign: "center", padding: "18px 0" }}>
+      <p style={{ fontFamily: "'Caveat',cursive", fontSize: 20, color: C.inkSoft, marginBottom: 12 }}>
+        this round is from an older version of the game ✶
+      </p>
+      <button className="press" onClick={onRetry} style={{ border: `1.5px solid ${C.sage}`, background: "#fff", borderRadius: 13, padding: "9px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer", color: C.ink }}>
+        reload this round
       </button>
     </div>
   );

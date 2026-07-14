@@ -7,17 +7,24 @@
 // sits behind a NAT/firewall that blocks a direct connection outright (common
 // on mobile carrier networks / CGNAT, some corporate wifi). A TURN server
 // relays the media in that case instead of the call failing/degrading to
-// choppy still frames. Metered's "Open Relay" also picks the TURN server
-// nearest the caller, which can also just be a *better routed* path than
-// whatever direct route the two ISPs would've taken — worth trying if calls
-// still feel laggy even when they do connect peer-to-peer.
+// choppy still frames, and can also just be a *better routed* path than
+// whatever direct route the two ISPs would've taken.
 //
 // Setup (optional — without it, this just returns public STUN servers, so
 // the booth keeps working exactly as it did before, peer-to-peer only):
-//   1. Free account: https://www.metered.ca/tools/openrelay/
-//      Note your "app name" (subdomain, e.g. "heartstrings") and API key.
-//   2. supabase secrets set METERED_APP_NAME=your-app-name METERED_API_KEY=your-key
-//   3. supabase functions deploy turn-credentials
+//   1. Free account: https://www.metered.ca/tools/openrelay/ (Metered's
+//      "Open Relay" TURN service, 20GB/month free).
+//   2. Dashboard → TURN Server → "Generate Your First Credential" (or "Add
+//      Credential"). Once it's created, click "Show ICE Servers Array" and
+//      copy the whole JSON array it shows you — that's it, no domain/app
+//      name to go hunting for.
+//   3. supabase secrets set METERED_ICE_SERVERS_JSON='<paste the array here>'
+//   4. supabase functions deploy turn-credentials
+//
+// (Advanced/alternative: if you'd rather fetch fresh credentials from
+// Metered's REST API on every call instead of using one static array, set
+// METERED_APP_NAME — the "Metered Domain" on the dashboard's Developers page
+// — and METERED_API_KEY instead of METERED_ICE_SERVERS_JSON.)
 //
 // Deploy: supabase functions deploy turn-credentials
 // ============================================================================
@@ -44,15 +51,28 @@ Deno.serve(async (req) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return json({ error: "unauthenticated" }, 401);
 
+    // Easiest path: a static ICE servers array pasted straight from the
+    // Metered dashboard's "Show ICE Servers Array" button.
+    const staticJson = Deno.env.get("METERED_ICE_SERVERS_JSON");
+    if (staticJson) {
+      try {
+        const parsed = JSON.parse(staticJson);
+        if (Array.isArray(parsed) && parsed.length) return json({ iceServers: parsed, turn: true });
+      } catch { /* fall through to other options below */ }
+    }
+
+    // Alternative path: fetch fresh credentials from Metered's REST API.
     const appName = Deno.env.get("METERED_APP_NAME");
     const apiKey = Deno.env.get("METERED_API_KEY");
-    if (!appName || !apiKey) return json({ iceServers: STUN_FALLBACK, turn: false });
+    if (appName && apiKey) {
+      const r = await fetch(`https://${appName}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`);
+      if (r.ok) {
+        const iceServers = await r.json();
+        if (Array.isArray(iceServers) && iceServers.length) return json({ iceServers, turn: true });
+      }
+    }
 
-    const r = await fetch(`https://${appName}.metered.live/api/v1/turn/credentials?apiKey=${apiKey}`);
-    if (!r.ok) return json({ iceServers: STUN_FALLBACK, turn: false });
-    const iceServers = await r.json();
-    const ok = Array.isArray(iceServers) && iceServers.length > 0;
-    return json({ iceServers: ok ? iceServers : STUN_FALLBACK, turn: ok });
+    return json({ iceServers: STUN_FALLBACK, turn: false });
   } catch {
     return json({ iceServers: STUN_FALLBACK, turn: false });
   }

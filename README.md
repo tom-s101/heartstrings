@@ -13,6 +13,7 @@ supabase/
   migrations/0003_creative_state.sql    # creative-section synced state
   functions/generate-question/          # server-side Claude generator (classic + game formats)
   functions/ai-assist/                  # generic Claude helper (Story suggest, Letter draft)
+  functions/turn-credentials/           # ICE servers for the Photo Booth's WebRTC video call (STUN, +TURN if configured)
 src/
   ui.jsx                                # palette, custom Icon set, primitives, Background
   lib/supabaseClient.js
@@ -27,7 +28,9 @@ src/
 1. Create a Supabase project; copy the Project URL + anon key into `.env` (see `.env.example`).
 2. Run **all three** migrations in order (SQL editor or `supabase db push`): `0001` → `0002` → `0003`.
 3. Set the Claude key as a server secret: `supabase secrets set ANTHROPIC_API_KEY=sk-ant-...`
-4. Deploy the functions: `supabase functions deploy generate-question` and `supabase functions deploy ai-assist`
+4. Deploy the functions: `supabase functions deploy generate-question`, `supabase functions deploy ai-assist`,
+   and `supabase functions deploy turn-credentials` (works with no extra config; see DEPLOY.md to add a free
+   TURN server if the Photo Booth's video call is laggy on some networks).
 5. `npm install @supabase/supabase-js` and render `<App />`.
 
 ## What's wired

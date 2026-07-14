@@ -60,11 +60,31 @@ supabase secrets set ANTHROPIC_API_KEY=sk-ant-your-real-key
 ```
 This key lives only on the server — it is never in the website code, so it can't leak.
 
-### 1f. Deploy the two edge functions
+### 1f. Deploy the edge functions
 ```bash
 supabase functions deploy generate-question
 supabase functions deploy ai-assist
+supabase functions deploy turn-credentials
 ```
+(`turn-credentials` works with no extra setup — see step 1f-bis if the Photo Booth's
+long-distance video call is laggy or won't connect and you want to add a TURN server.)
+
+### 1f-bis. (Optional) Add a TURN server for smoother Photo Booth video
+The Photo Booth's long-distance video call is real peer-to-peer WebRTC. Out of the box
+it only has public **STUN** servers, which help two devices find each other but can't
+help if either side is behind a NAT/firewall that blocks a direct connection outright
+(common on mobile data / CGNAT, some corporate wifi) — and even when it does connect,
+the direct route your two ISPs pick isn't always the fastest one. A **TURN** server
+fixes both: it relays the call when a direct connection isn't possible, and picks a
+route nearest to each of you.
+1. Free account: https://www.metered.ca/tools/openrelay/ — note your **app name**
+   (the subdomain you're given, e.g. `heartstrings`) and your **API key**.
+2. ```bash
+   supabase secrets set METERED_APP_NAME=your-app-name METERED_API_KEY=your-key
+   supabase functions deploy turn-credentials
+   ```
+That's it — no client code changes. The free tier covers 20GB/month of relayed video,
+which is generous for two people.
 
 ### 1g. Turn OFF email confirmation for now (so testing is instant)
 **Authentication → Sign In / Providers → Email**: turn **"Confirm email" OFF**, Save.
@@ -174,6 +194,10 @@ If both of you see "both here" and actions mirror, you're fully live.
   added in `0001`). Re-run them if unsure; they're safe to re-run.
 - **Changed code, site didn't update** — Netlify redeploys on every `git push`; for env-var
   changes you must trigger a manual redeploy.
+- **Photo Booth video is laggy / choppy / stuck on "connecting video…"** — see step 1f-bis
+  above and add a free TURN server. Without one, the call only has STUN, which some
+  networks (mobile data especially) can't complete a direct connection over at all — the
+  booth falls back to sending occasional photos instead of real video in that case.
 
 ### CLI alternative for step 1c
 If you linked the CLI (1d) you can run all migrations at once instead of pasting:

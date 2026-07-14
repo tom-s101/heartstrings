@@ -35,7 +35,7 @@ export default function App() {
       ) : section === "booth" ? (
         <PhotoBooth user={user} onBack={home} />
       ) : !session ? (
-        <Join mode={section === "together" ? "together" : "distance"} onEnter={setSession} onBack={home} />
+        <Join mode={section === "together" ? "together" : "distance"} user={user} onEnter={setSession} onBack={home} />
       ) : (
         <Game session={session} user={user} onLeave={home} />
       )}

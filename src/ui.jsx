@@ -18,7 +18,7 @@ export function Icon({ name, size = 24, color = C.ink, fill = "none", sw = 1.7, 
   const P = { fill, stroke: color, strokeWidth: sw, strokeLinecap: "round", strokeLinejoin: "round" };
   const svg = (ch) => <svg viewBox="0 0 24 24" style={s}>{ch}</svg>;
   switch (name) {
-    case "heart": return svg(<path d="M12 20s-6.7-4.2-9.2-8.4C1 8.6 2.6 5.6 5.7 5.6c1.9 0 3.2 1.1 4.3 2.5C11.1 6.7 12.4 5.6 14.3 5.6c3.1 0 4.7 3 2.9 6C18.7 15.8 12 20 12 20Z" fill={color} stroke="none" />);
+    case "heart": return svg(<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35Z" fill={color} stroke="none" />);
     case "wave": return svg(<><path d="M2.5 13q3.2-3.2 6.3 0t6.3 0 6.3 0" {...P} /><path d="M2.5 8.5q3.2-3.2 6.3 0t6.3 0 6.3 0" {...P} /></>);
     case "lotus": { const petal = "M12 15.5C9.6 12 9.6 8 12 5.4 14.4 8 14.4 12 12 15.5Z"; return svg(<>{[-66,-33,0,33,66].map((a) => <path key={a} d={petal} transform={`rotate(${a} 12 15.5)`} {...P} />)}<path d="M4.8 15.8C8.4 19 15.6 19 19.2 15.8" {...P} /></>); }
     case "arrow": return svg(<><path d="M4 12h15" {...P} /><path d="M13 6l6 6-6 6" {...P} /></>);

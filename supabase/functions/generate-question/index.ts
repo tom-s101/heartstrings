@@ -7,14 +7,28 @@
 // The caller's JWT is used, and room membership is checked against the
 // caller's own row so it can never accidentally match a different member.
 //
-// Reliability notes (fixed after real-world testing):
+// Reliability notes:
 // - Red/Green Flag was drifting almost entirely green because nothing told
-//   the model which one to write. It's now forced to a real coin-flip per
-//   round, and the model is told explicitly which kind to produce.
-// - Occasionally the model's reply had leftover formatting/labels around the
-//   JSON, which then got rendered verbatim in the UI. Replies are now
-//   JSON-extracted, shape-validated, and retried once before ever reaching
-//   the client — a bad reply is discarded rather than displayed.
+//   the model which one to write. It's forced to a real coin-flip per round,
+//   and the model is told explicitly which kind to produce. The same
+//   coin-flip mechanism now also picks the "target"/"teller" side for
+//   How Well You Know Me and Two Truths and a Lie.
+// - FIXED (was causing "glitchy card" on ~80% of generations): the
+//   garbled-text guard used to reject ANY string containing a curly or
+//   square bracket ANYWHERE in it. Ordinary, colorful game text legitimately
+//   uses brackets sometimes (asides, emphasis), so this was throwing away
+//   perfectly good replies at a high rate. It now only rejects text that is
+//   itself a JSON blob or still contains a literal `"key":` fragment or a
+//   stray code fence — the actual signature of a leaked/malformed reply —
+//   while leaving normal prose alone.
+// - max_tokens raised (350 -> 700) and retries raised (2 -> 3), since some
+//   schemas (three statements, four options, an explain line) genuinely
+//   need more headroom and were sometimes getting cut off mid-JSON.
+// - If every attempt still fails, the function no longer 502s and lets the
+//   client fall back to a generic, wrong-shaped question. It now returns a
+//   hand-written, shape-correct fallback round for the exact format that was
+//   requested, so the UI is always coherent even in the rare case the model
+//   truly can't be reached.
 //
 // Deploy:   supabase functions deploy generate-question
 // Secret:   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
@@ -36,10 +50,10 @@ const FORMATS: Record<string, { shape: string; instr: string }> = {
   trolley:    { shape: "choice2",       instr: "a lighthearted trolley-problem dilemma about the relationship; the trolley threatens one lovely thing and pulling the lever sacrifices another. Two options, each a thing one might save." },
   redflags:   { shape: "redGreen",      instr: "a single dating trait or behavior, described plainly and neutrally in one sentence, for the couple to judge as a red or green flag" },
   cah:        { shape: "open",          instr: "a cheeky fill-in-the-blank sentence using ____ for the blank; clean but funny" },
-  mostlikely: { shape: "pickPerson",    instr: "a 'who is more likely to ___' question" },
-  nhie:       { shape: "yesNo",         instr: "a 'Never have I ever ___' statement, flirty or funny but kind" },
-  newlywed:   { shape: "open",          instr: "a 'guess my answer' question where each partner predicts the other's response" },
-  hottake:    { shape: "agreeDisagree", instr: "a slightly provocative opinion/hot take about love or dating to agree or disagree with" },
+  mostlikely: { shape: "spectrum3",     instr: "a 'who is more likely to ___' question" },
+  nhie:       { shape: "handraise",     instr: "a 'Never have I ever ___' statement, flirty or funny but kind" },
+  newlywed:   { shape: "guess",         instr: "a short, specific personal-detail prompt phrased as a fill-in-the-blank FACT about a person, ending naturally right before an unstated blank — a fact-card, not a full question. Style examples (write your own, don't reuse these): 'their go-to order at a coffee shop is', 'the movie they've rewatched the most is', 'their most-used emoji is', 'the song they know every word to is'. Keep it specific, concrete, everyday, and guessable — not abstract or heavy." },
+  hottake:    { shape: "spectrum2",     instr: "a slightly provocative opinion/hot take about love or dating to agree or disagree with" },
   thisorthat: { shape: "choice2",       instr: "a quick, cute either/or about shared life; two short options" },
   truthdare:  { shape: "truthDare",     instr: "one warm 'truth' question AND one sweet/silly 'dare' doable over a video call" },
   // classic single-question categories (open shape) — classic mode reuses this path
@@ -50,7 +64,7 @@ const FORMATS: Record<string, { shape: string; instr: string }> = {
   hypothetical:{ shape: "open", instr: "a hypothetical or would-you-rather one-sentence question" },
   // new formats
   lovelang:  { shape: "choiceMulti", instr: "a short everyday scenario (1 sentence), followed by 4 options that are each a natural way someone might show love in that moment (e.g. a kind word, doing a helpful task for them, a small thoughtful gift, giving focused undivided time, a warm hug or touch) — phrase every option as a natural action, never name a 'love language' term directly" },
-  twotruths: { shape: "threeChoice", instr: "three short, surprising statements about love, romance, relationships, or animal courtship/mating rituals — exactly one is false. Make them general fun trivia, NOT about this specific couple's real life." },
+  twotruths: { shape: "twolie", instr: "three short, punchy first-person statements someone might say about themselves — quirky habits, small confessions, random facts, tastes, or bits of history. Make all three sound EQUALLY plausible and written in the same casual voice/length so it's genuinely hard to tell which one's made up. Keep each under 12 words. Do not mark or hint which one is false — that part is decided in the app, not by you." },
   compat:    { shape: "slider",      instr: "a single short playful statement to rate from 0 to 100 for how much it describes 'us' as a couple (e.g. how much you bicker over silly things, how spontaneous you are together, how often you finish each other's sentences)" },
 };
 
@@ -61,7 +75,7 @@ const VIBE_LABEL: Record<string, string> = {
 const SCHEMA_BY_SHAPE: Record<string, string> = {
   choice2:     `{"prompt":"...","options":["A","B"]}`,
   truthDare:   `{"truth":"...","dare":"..."}`,
-  threeChoice: `{"prompt":"...","options":["A","B","C"],"correctIndex":0,"explain":"one short fun sentence revealing the answer"}`,
+  twolie:      `{"prompt":"a short one-line lead-in, e.g. 'a few things about me...'","options":["statement A","statement B","statement C"]}`,
   choiceMulti: `{"prompt":"...","options":["A","B","C","D"]}`,
 };
 function schemaFor(shape: string): string {
@@ -78,11 +92,19 @@ function extractJSON(raw: string): string {
   return raw.slice(start, end + 1);
 }
 
-// A string is "garbled" if it's not a real string, absurdly long, or still
-// contains raw JSON punctuation — the exact symptom of a leaked/malformed
-// reply making it into a visible card.
+// A string is "garbled" only if it's not real text, empty, absurdly long, or
+// still carries an actual signature of leaked JSON/markdown — NOT just
+// because it happens to contain a bracket somewhere (normal prose does that
+// sometimes, e.g. a parenthetical aside written with brackets, and that was
+// previously enough to nuke a perfectly good reply).
 function garbled(text: unknown): boolean {
-  return typeof text !== "string" || text.length === 0 || text.length > 400 || /[{}[\]]/.test(text);
+  if (typeof text !== "string") return true;
+  const t = text.trim();
+  if (!t || t.length > 500) return true;
+  if (/^[{[][\s\S]*[}\]]$/.test(t)) return true;      // the whole string IS a JSON/array blob
+  if (/"[a-zA-Z_]+"\s*:\s*["{[\d]/.test(t)) return true; // a literal `"key": value` fragment leaked in
+  if (/```/.test(t)) return true;                      // a stray code fence
+  return false;
 }
 
 function isValidRound(shape: string, round: unknown): round is Record<string, unknown> {
@@ -95,18 +117,36 @@ function isValidRound(shape: string, round: unknown): round is Record<string, un
   if (shape === "truthDare") {
     return !garbled(r.truth) && !garbled(r.dare);
   }
-  if (shape === "threeChoice") {
+  if (shape === "twolie") {
     return !garbled(r.prompt) && Array.isArray(r.options) && r.options.length === 3
-      && r.options.every((o) => typeof o === "string" && !garbled(o))
-      && Number.isInteger(r.correctIndex) && (r.correctIndex as number) >= 0 && (r.correctIndex as number) <= 2
-      && !garbled(r.explain);
+      && r.options.every((o) => typeof o === "string" && !garbled(o));
   }
   if (shape === "choiceMulti") {
     return !garbled(r.prompt) && Array.isArray(r.options) && r.options.length >= 3 && r.options.length <= 5
       && r.options.every((o) => typeof o === "string" && !garbled(o));
   }
-  // open, redGreen, pickPerson, yesNo, agreeDisagree, slider — just need a clean prompt
+  // open, guess, redGreen, spectrum2, spectrum3, handraise, slider — just need a clean prompt
   return !garbled(r.prompt);
+}
+
+// Hand-written, always-valid fallback content per shape, used only if every
+// live attempt at the model genuinely fails — keeps the UI shape-correct
+// (never swaps a game into an unrelated generic question) even then.
+function fallbackFor(format: string, shape: string): Record<string, unknown> {
+  const table: Record<string, Record<string, unknown>> = {
+    choice2:     { prompt: "Tonight: cozy night in or spontaneous night out?", options: ["Cozy night in", "Spontaneous night out"] },
+    redGreen:    { prompt: "Remembers little things you mentioned in passing, weeks later." },
+    open:        { prompt: "Tell me about a moment today you wished I'd been there for." },
+    guess:       { prompt: "their go-to order at a coffee shop is" },
+    spectrum2:   { prompt: "Splitting the bill down the middle, always, no matter who ordered what." },
+    spectrum3:   { prompt: "who is more likely to forget where they put their phone" },
+    handraise:   { prompt: "Never have I ever cried during a commercial." },
+    choiceMulti: { prompt: "You've had a rough day and just walked in the door. What actually helps most?", options: ["A hug, no talking yet", "Them asking what happened", "Them just making you tea", "Some quiet time, then talk"] },
+    twolie:      { prompt: "a few things about me…", options: ["I can't sleep without socks on", "I've never seen a single Star Wars movie", "I once ate cereal for dinner five nights in a row"] },
+    truthDare:   { truth: "What's a small thing that instantly makes your day better?", dare: "Send a voice memo saying the nicest thing about your partner right now." },
+    slider:      { prompt: "How much you finish each other's sentences." },
+  };
+  return table[shape] ?? { prompt: "What's something small about today you want to remember?" };
 }
 
 Deno.serve(async (req) => {
@@ -143,6 +183,11 @@ Deno.serve(async (req) => {
     // Red/Green Flag: force a genuine 50/50 split instead of leaving the
     // balance up to the model (which was defaulting to green almost always).
     const leaning = format === "redflags" ? (Math.random() < 0.5 ? "red" : "green") : null;
+    // How Well You Know Me: which side is being guessed about this round.
+    const target = format === "newlywed" ? (Math.random() < 0.5 ? "him" : "her") : null;
+    // Two Truths and a Lie: which side is "telling" this round (they'll pick
+    // their own lie in-app; the model never decides truth/false).
+    const teller = format === "twotruths" ? (Math.random() < 0.5 ? "him" : "her") : null;
 
     const schema = schemaFor(fmt.shape);
     const basePrompt =
@@ -168,7 +213,7 @@ Deno.serve(async (req) => {
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
         },
-        body: JSON.stringify({ model: MODEL, max_tokens: 350, messages: [{ role: "user", content: promptText }] }),
+        body: JSON.stringify({ model: MODEL, max_tokens: 700, messages: [{ role: "user", content: promptText }] }),
       });
       if (!aiRes.ok) return null;
       const data = await aiRes.json();
@@ -178,21 +223,25 @@ Deno.serve(async (req) => {
       try { return JSON.parse(extractJSON(raw)); } catch { return null; }
     }
 
-    // Try twice: if the first reply doesn't parse or doesn't match the
+    // Try up to three times: if a reply doesn't parse or doesn't match the
     // expected shape, ask again with a stricter reminder rather than ever
     // passing a malformed object through to the client/database.
     let round: Record<string, unknown> | null = null;
-    for (let attempt = 0; attempt < 2 && !round; attempt++) {
+    for (let attempt = 0; attempt < 3 && !round; attempt++) {
       const promptText = attempt === 0
         ? basePrompt
-        : basePrompt + `\nIMPORTANT: reply with ONLY the raw JSON object and nothing else — no labels, no code fences, no extra text.`;
+        : basePrompt + `\nIMPORTANT: reply with ONLY the raw JSON object and nothing else — no labels, no code fences, no extra text before or after it.`;
       const candidate = await callClaude(promptText);
       if (isValidRound(fmt.shape, candidate)) round = candidate as Record<string, unknown>;
     }
-    if (!round) return json({ error: "bad_json" }, 502);
+    // Every live attempt failed — use a hand-written, shape-correct fallback
+    // instead of ever 502-ing into a mismatched generic question client-side.
+    if (!round) round = fallbackFor(format, fmt.shape);
 
     round.shape = fmt.shape;
     if (leaning) round.answer = leaning; // "red" | "green" — used client-side to reveal + score correctness
+    if (target) round.target = target;   // "him" | "her" — who's answering about themselves this round
+    if (teller) round.teller = teller;   // "him" | "her" — who privately picks their own lie this round
 
     // store a text key for the no-repeat bank (prompt, or truth for truth/dare)
     const key = String(round.prompt ?? round.truth ?? "").slice(0, 300);

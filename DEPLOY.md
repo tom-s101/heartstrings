@@ -77,14 +77,33 @@ help if either side is behind a NAT/firewall that blocks a direct connection out
 the direct route your two ISPs pick isn't always the fastest one. A **TURN** server
 fixes both: it relays the call when a direct connection isn't possible, and picks a
 route nearest to each of you.
-1. Free account: https://www.metered.ca/tools/openrelay/ — note your **app name**
-   (the subdomain you're given, e.g. `heartstrings`) and your **API key**.
-2. ```bash
-   supabase secrets set METERED_APP_NAME=your-app-name METERED_API_KEY=your-key
+
+1. Free account: https://www.metered.ca/tools/openrelay/
+2. In the dashboard, go to **TURN Server** (left sidebar) → click **"Generate Your
+   First Credential"** (or **Add Credential** if you already have one).
+3. Once it's created, click **"Show ICE Servers Array"** on that credential — it
+   shows a JSON array like:
+   ```json
+   [
+     { "urls": "stun:stun.relay.metered.ca:80" },
+     { "urls": "turn:global.relay.metered.ca:80", "username": "...", "credential": "..." },
+     { "urls": "turn:global.relay.metered.ca:80?transport=tcp", "username": "...", "credential": "..." },
+     { "urls": "turn:global.relay.metered.ca:443", "username": "...", "credential": "..." },
+     { "urls": "turns:global.relay.metered.ca:443?transport=tcp", "username": "...", "credential": "..." }
+   ]
+   ```
+   Copy the whole thing (as one line works fine).
+4. Paste it straight into a secret — no domain/app-name lookup needed:
+   ```bash
+   supabase secrets set METERED_ICE_SERVERS_JSON='[{"urls":"stun:stun.relay.metered.ca:80"},{"urls":"turn:global.relay.metered.ca:80","username":"...","credential":"..."}]'
    supabase functions deploy turn-credentials
    ```
 That's it — no client code changes. The free tier covers 20GB/month of relayed video,
 which is generous for two people.
+
+(There's also a fancier option — `METERED_APP_NAME` + `METERED_API_KEY` instead of
+`METERED_ICE_SERVERS_JSON` — that fetches fresh credentials from Metered on every call
+instead of reusing one static set. Not necessary unless you want that.)
 
 ### 1g. Turn OFF email confirmation for now (so testing is instant)
 **Authentication → Sign In / Providers → Email**: turn **"Confirm email" OFF**, Save.

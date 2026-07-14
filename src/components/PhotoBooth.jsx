@@ -11,12 +11,16 @@ import { C, Icon, card, primary, ghost, Label, Input, Hint } from "../ui";
      AND the booth itself. That lets us:
        - sync the strip's look (layout/frame/filter/caption) from whoever
          created the room to whoever joins with the code, live, no re-entry.
-       - stream a low-fps preview of each partner's camera to the other, so
-         the live view (and the final shots) show both of you together in
-         one split frame, not just your own face.
-     The countdown is still synced (broadcast "shutter"), each device shoots
-     its own camera, and composites itself + the last frame it has of its
-     partner into a single photo per shot.
+       - open a real peer-to-peer WebRTC video call between the two devices
+         (signaled over this same room channel), so the live view — and the
+         final shots — show both of you together, at real camera quality,
+         in one split frame. If the two devices can't establish a direct
+         connection (no TURN server is configured here, so very restrictive
+         NATs/firewalls can occasionally fail), it falls back to relaying
+         low-fps camera snapshots instead, so the booth still works.
+     The countdown is still synced (broadcast "shutter"), and each device
+     composites its own camera + its live view of its partner (WebRTC video
+     when connected, the relay snapshot otherwise) into a single photo per shot.
    ============================================================================ */
 
 const FRAMES = [
@@ -37,6 +41,14 @@ const LAYOUTS = [
 ];
 const SHOT_W = 480, SHOT_H = 360;
 const DEFAULT_CFG = { layout: "strip3", frame: "rose", filter: "none", caption: "us ♡", date: true };
+// public STUN-only config — no TURN server, so this is peer-to-peer over the
+// open internet. Works for the vast majority of home/mobile connections;
+// very restrictive corporate networks or symmetric NATs can still fail, in
+// which case the booth quietly falls back to the low-fps photo relay below.
+const ICE_SERVERS = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+];
 
 const genCode = () => Array.from({ length: 6 }, () => "ABCDEFGHJKMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 31)]).join("");
 
@@ -55,8 +67,9 @@ export function PhotoBooth({ user, onBack }) {
   const cfgRef = useRef(cfg);
   useEffect(() => { cfgRef.current = cfg; }, [cfg]);
   const [partnerHere, setPartnerHere] = useState(false);
-  const [partnerFrame, setPartnerFrame] = useState(null); // last low-fps snapshot of their camera
+  const [partnerFrame, setPartnerFrame] = useState(null); // last low-fps snapshot of their camera (fallback)
   const [shutterTick, setShutterTick] = useState(0);
+  const [rtcSignal, setRtcSignal] = useState(null); // latest WebRTC offer/answer/ice from partner
   const isCreator = !session || session.side === "him";
 
   const enterRoom = async (code, side) => {
@@ -90,6 +103,7 @@ export function PhotoBooth({ user, onBack }) {
     ch.on("broadcast", { event: "cfg" }, ({ payload }) => { if (session.side !== "him") setCfg(payload); });
     ch.on("broadcast", { event: "frame" }, ({ payload }) => setPartnerFrame(payload.img));
     ch.on("broadcast", { event: "shutter" }, () => setShutterTick((t) => t + 1));
+    ch.on("broadcast", { event: "rtc" }, ({ payload }) => setRtcSignal({ ...payload, t: Date.now() }));
 
     ch.subscribe(async (st) => {
       if (st === "SUBSCRIBED") {
@@ -97,7 +111,7 @@ export function PhotoBooth({ user, onBack }) {
         if (session.side === "him") ch.send({ type: "broadcast", event: "cfg", payload: cfgRef.current });
       }
     });
-    return () => { supabase.removeChannel(ch); channelRef.current = null; setPartnerHere(false); setPartnerFrame(null); };
+    return () => { supabase.removeChannel(ch); channelRef.current = null; setPartnerHere(false); setPartnerFrame(null); setRtcSignal(null); };
     // eslint-disable-next-line
   }, [session?.roomId]);
 
@@ -114,6 +128,9 @@ export function PhotoBooth({ user, onBack }) {
   }, []);
   const sendShutter = useCallback(() => {
     channelRef.current?.send({ type: "broadcast", event: "shutter", payload: {} });
+  }, []);
+  const sendRtc = useCallback((msg) => {
+    channelRef.current?.send({ type: "broadcast", event: "rtc", payload: msg });
   }, []);
 
   const startFresh = (nextSession) => { setCfg(DEFAULT_CFG); setSession(nextSession); setStage(nextSession ? "setup" : "setup"); };
@@ -152,7 +169,7 @@ export function PhotoBooth({ user, onBack }) {
 
   return (
     <Booth cfg={cfg} session={session} user={user} partnerHere={partnerHere} partnerFrame={partnerFrame}
-      shutterTick={shutterTick} onSendFrame={sendFrame} onSendShutter={sendShutter}
+      shutterTick={shutterTick} rtcSignal={rtcSignal} onSendFrame={sendFrame} onSendShutter={sendShutter} onSendRtc={sendRtc}
       onDone={() => setStage("setup")} onExit={onBack} />
   );
 }
@@ -237,11 +254,12 @@ function SummaryRow({ label, value }) {
 }
 
 /* ---------------- the booth itself ---------------- */
-function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onSendFrame, onSendShutter, onDone, onExit }) {
+function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, rtcSignal, onSendFrame, onSendShutter, onSendRtc, onDone, onExit }) {
   const shots = LAYOUTS.find((l) => l.id === cfg.layout).shots;
   const filter = FILTERS.find((f) => f.id === cfg.filter).css;
   const frame = FRAMES.find((f) => f.id === cfg.frame);
   const videoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
   const streamRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [camErr, setCamErr] = useState(null);
@@ -250,7 +268,87 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onS
   const [mine, setMine] = useState([]);       // captured shots (data urls) — already include partner when in a room
   const [phase, setPhase] = useState("idle"); // idle | shooting | done
   const shooting = useRef(false);
-  const partnerImgRef = useRef(null); // decoded <img> of partnerFrame, ready for canvas draws
+  const partnerImgRef = useRef(null); // decoded <img> of partnerFrame, ready for canvas draws — fallback only
+
+  /* -------- real peer-to-peer video (WebRTC), signaled over the same room
+     channel. Whoever created the room always makes the offer; the joiner
+     always answers, so there's no glare. If the connection can't establish
+     (strict NAT/firewall, no TURN server configured), the low-fps photo
+     relay above keeps working as a fallback for both the live "them" pane
+     and captured shots. */
+  const pcRef = useRef(null);
+  const madeOfferRef = useRef(false);
+  const pendingCandidatesRef = useRef([]);
+  const [rtcConnected, setRtcConnected] = useState(false);
+  const isInitiator = session?.side === "him";
+
+  const teardownPC = useCallback(() => {
+    pcRef.current?.close();
+    pcRef.current = null;
+    madeOfferRef.current = false;
+    pendingCandidatesRef.current = [];
+    setRtcConnected(false);
+  }, []);
+
+  const ensurePC = useCallback(() => {
+    if (pcRef.current) return pcRef.current;
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    streamRef.current?.getTracks().forEach((t) => pc.addTrack(t, streamRef.current));
+    pc.ontrack = (e) => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0]; };
+    pc.onicecandidate = (e) => { if (e.candidate) onSendRtc({ kind: "ice", data: e.candidate.toJSON() }); };
+    pc.onconnectionstatechange = () => {
+      setRtcConnected(pc.connectionState === "connected");
+      if (pc.connectionState === "failed" || pc.connectionState === "closed") teardownPC();
+    };
+    pcRef.current = pc;
+    return pc;
+  }, [onSendRtc, teardownPC]);
+
+  // initiator opens the connection once the camera's ready and the partner's in the room
+  useEffect(() => {
+    if (!session || !isInitiator || !ready || !partnerHere || madeOfferRef.current) return;
+    madeOfferRef.current = true;
+    (async () => {
+      try {
+        const pc = ensurePC();
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        onSendRtc({ kind: "offer", data: offer });
+      } catch { madeOfferRef.current = false; }
+    })();
+  }, [session, isInitiator, ready, partnerHere, ensurePC, onSendRtc]);
+
+  // handle incoming offer/answer/ice from the partner
+  useEffect(() => {
+    if (!rtcSignal || !session || !ready) return;
+    (async () => {
+      try {
+        const pc = ensurePC();
+        if (rtcSignal.kind === "offer") {
+          await pc.setRemoteDescription(new RTCSessionDescription(rtcSignal.data));
+          for (const c of pendingCandidatesRef.current) { try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch { /* ignore */ } }
+          pendingCandidatesRef.current = [];
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          onSendRtc({ kind: "answer", data: answer });
+        } else if (rtcSignal.kind === "answer") {
+          if (pc.signalingState !== "stable") {
+            await pc.setRemoteDescription(new RTCSessionDescription(rtcSignal.data));
+            for (const c of pendingCandidatesRef.current) { try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch { /* ignore */ } }
+            pendingCandidatesRef.current = [];
+          }
+        } else if (rtcSignal.kind === "ice") {
+          if (pc.remoteDescription) { try { await pc.addIceCandidate(new RTCIceCandidate(rtcSignal.data)); } catch { /* ignore */ } }
+          else pendingCandidatesRef.current.push(rtcSignal.data);
+        }
+      } catch { /* a stray/late signal — safe to drop */ }
+    })();
+    // eslint-disable-next-line
+  }, [rtcSignal]);
+
+  // partner stepped out of the booth — tear down so a fresh offer goes out when they're back
+  useEffect(() => { if (!partnerHere) teardownPC(); }, [partnerHere, teardownPC]);
+  useEffect(() => () => teardownPC(), [teardownPC]);
 
   /* camera */
   useEffect(() => {
@@ -269,14 +367,14 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onS
     return () => { alive = false; streamRef.current?.getTracks().forEach((t) => t.stop()); };
   }, []);
 
-  /* stream a snapshot of our own camera to our partner a few times a second
-     — this is what ends up in their half of the composited photo, so it's
-     captured at the SAME resolution/aspect as the half-frame it'll fill
-     (not a tiny thumbnail that then gets blurrily upscaled) and at a high
-     JPEG quality. A few frames a second is plenty for a photo booth pose;
-     we're deliberately not trying to run real video over Realtime broadcast. */
+  /* fallback path: a snapshot of our own camera sent to our partner a few
+     times a second, used only for the live "them" pane and for compositing
+     shots WHILE real WebRTC video isn't connected. Once rtcConnected is
+     true this stops (real video is strictly better and there's no reason
+     to keep spending bandwidth on it), and resumes automatically if the
+     peer connection ever drops. */
   useEffect(() => {
-    if (!session || !ready) return;
+    if (!session || !ready || rtcConnected) return;
     const FW = SHOT_W / 2, FH = SHOT_H; // exactly the size of the half-slot it fills
     const cv = document.createElement("canvas"); cv.width = FW; cv.height = FH;
     const cx = cv.getContext("2d");
@@ -287,7 +385,7 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onS
       onSendFrame(cv.toDataURL("image/jpeg", 0.85));
     }, 300);
     return () => clearInterval(iv);
-  }, [session, ready, onSendFrame]);
+  }, [session, ready, rtcConnected, onSendFrame]);
 
   /* decode the latest partner snapshot so capture() can draw it synchronously */
   useEffect(() => {
@@ -315,7 +413,9 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onS
     if (session) {
       const half = SHOT_W / 2;
       drawCover(x, v, 0, 0, half, SHOT_H, true); // you, mirrored — the selfie you expect
-      if (partnerImgRef.current) drawCover(x, partnerImgRef.current, half, 0, half, SHOT_H, false); // them, true orientation
+      const rv = remoteVideoRef.current;
+      if (rtcConnected && rv && rv.videoWidth) drawCover(x, rv, half, 0, half, SHOT_H, false); // them, real video, true orientation
+      else if (partnerImgRef.current) drawCover(x, partnerImgRef.current, half, 0, half, SHOT_H, false); // fallback relay frame
       else { x.filter = "none"; x.fillStyle = "#2a2a2a"; x.fillRect(half, 0, half, SHOT_H); }
       x.filter = "none";
       x.strokeStyle = "rgba(255,255,255,.55)"; x.lineWidth = 2;
@@ -324,7 +424,7 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onS
       drawCover(x, v, 0, 0, SHOT_W, SHOT_H, true);
     }
     return cv.toDataURL("image/jpeg", 0.88);
-  }, [filter, session]);
+  }, [filter, session, rtcConnected]);
 
   const runSequence = useCallback(async (broadcast) => {
     if (shooting.current) return;
@@ -387,7 +487,7 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onS
         {session && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: partnerHere ? C.sageDeep : C.gold }}>
             <span style={{ width: 8, height: 8, borderRadius: 99, background: partnerHere ? C.sage : C.gold }} />
-            {partnerHere ? "both in the booth" : `waiting… code ${session.code}`}
+            {!partnerHere ? `waiting… code ${session.code}` : rtcConnected ? "both in the booth · live video" : "both in the booth · connecting video…"}
           </div>
         )}
       </div>
@@ -407,14 +507,18 @@ function Booth({ cfg, session, user, partnerHere, partnerFrame, shutterTick, onS
                     style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", filter, opacity: ready ? 1 : 0 }} />
                 </Pane>
                 <div style={{ width: 2, background: "rgba(255,255,255,.35)" }} />
-                <Pane label="them">
-                  {partnerFrame ? (
+                <Pane label={rtcConnected ? "them · HD" : "them"}>
+                  {/* real video track, once connected — hidden (not unmounted) so the
+                      peer connection's ontrack handler always has somewhere to attach */}
+                  <video ref={remoteVideoRef} autoPlay playsInline
+                    style={{ width: "100%", height: "100%", objectFit: "cover", filter, display: rtcConnected ? "block" : "none" }} />
+                  {!rtcConnected && (partnerFrame ? (
                     <img src={partnerFrame} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter }} />
                   ) : (
                     <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,.55)", fontSize: 12, textAlign: "center", padding: 10 }}>
-                      {partnerHere ? "loading their camera…" : "waiting for them to join…"}
+                      {partnerHere ? "connecting video…" : "waiting for them to join…"}
                     </div>
-                  )}
+                  ))}
                 </Pane>
               </>
             ) : (
